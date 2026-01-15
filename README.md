@@ -1,5 +1,7 @@
-# PRISM: Predictive Representations for Inference of Scale and Macrostates
+# PRISM
 
-## Processes currently tested
-1. Golden Mean
-2. Even Process
+Predictive Representations for Inference of Scale and Macrostates
+
+## Processes tested
+- Golden Mean
+- Even Process

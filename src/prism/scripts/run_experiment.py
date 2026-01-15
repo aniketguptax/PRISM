@@ -17,27 +17,27 @@ def main():
     parser.add_argument("--process", required=True, choices=PROCESS_REGISTRY.keys())
     parser.add_argument("--reconstructor", default="one_step", choices=RECONSTRUCTOR_REGISTRY.keys())
     
-    parser.add_argument("--ks", nargs="+", type=int, required=True, help="List of k values for LastK representations")
+    parser.add_argument("--ks", nargs="+", type=int, required=True, help="k values for LastK")
     parser.add_argument("--length", type=int, default=400_000)
     parser.add_argument("--train-frac", type=float, default=0.8)
-    parser.add_argument("--seeds", nargs="+", type=int, default=[0], help="List of random seeds to run (e.g. 0 1 2 3)")
+    parser.add_argument("--seeds", nargs="+", type=int, default=[0], help="random seeds")
     
-    parser.add_argument("--noisy", action="store_true", help="Use LastKWithNoise instead of LastK")
-    parser.add_argument("--noise-seed", type=float, default=123, help="Seed for independent noise")
+    parser.add_argument("--noisy", action="store_true", help="add noise to representation")
+    parser.add_argument("--noise-seed", type=float, default=123, help="noise seed")
     
     parser.add_argument("--outdir", type=Path, default=Path("results/run"))
-    parser.add_argument("--save-transitions", action="store_true", help="Whether to save state transitions from JSON edge lists")
+    parser.add_argument("--save-transitions", action="store_true", help="save state transitions")
     parser.add_argument(
         "--show-transitions-for",
         type=str,
         default=None,
-        help="Representation name to save transitions for, to stdout (if --save-transitions is set)"
+        help="which rep to show transitions for"
     )
     parser.add_argument(
         "--show-seed",
         type=int,
         default=None,
-        help="Seed to use when printing transitions (defaults to first seed)"
+        help="seed for showing transitions"
     )
 
     args = parser.parse_args()
@@ -66,7 +66,7 @@ def main():
     
     if args.show_transitions_for is not None:
         if not args.save_transitions:
-            print("\n--show-transitions-for requires --save-transitions")
+            print("\nneed --save-transitions to show transitions")
             return
 
         seed_to_show = args.show_seed if args.show_seed is not None else args.seeds[0]
@@ -74,16 +74,13 @@ def main():
 
         if transitions_file.exists():
             edges = json.loads(transitions_file.read_text(encoding="utf-8"))
-            print(f"\nTransitions for {args.show_transitions_for} (seed={seed_to_show}):")
+            print(f"\n{args.show_transitions_for} (seed={seed_to_show}):")
             for s, sym, sp in sorted(edges, key=lambda e: (e[0], e[1], e[2])):
                 print(f"S{s} --{sym}--> S{sp}")
-            dot_file = args.outdir / f"transitions_{args.show_transitions_for}_seed{seed_to_show}.dot"
-            print(f"\nWrote Graphviz DOT to: {dot_file}")
+            dot_file = args.outdir / f"{args.process}_{args.show_transitions_for}_seed{seed_to_show}.dot"
+            print(f"\nwrote {dot_file}")
         else:
-            print(
-                f"\nNo transitions file found at {transitions_file}. "
-                "Did you pass --save-transitions and a matching --show-transitions-for?"
-            )
+            print(f"\nno transitions file at {transitions_file}")
 
 
 if __name__ == "__main__":
