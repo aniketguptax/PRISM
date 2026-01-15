@@ -10,7 +10,7 @@ class LastK(Representation):
 
     def __post_init__(self):
         if self.k < 1:
-            raise ValueError("k must be >= 1")
+            raise ValueError("k must be at least 1")
 
     @property
     def name(self) -> str:
@@ -32,7 +32,7 @@ class LastKWithNoise(Representation):
 
     def __post_init__(self):
         if self.k < 1:
-            raise ValueError("k must be >= 1")
+            raise ValueError("k must be at least 1")
 
     @property
     def name(self) -> str:

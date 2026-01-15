@@ -11,7 +11,7 @@ class GoldenMean(Process):
 
     def __init__(self, p_emit_one: float = 0.7):
         if not (0.0 < p_emit_one < 1.0):
-            raise ValueError("p_emit_one must be in (0, 1)")
+            raise ValueError("p needs to be between 0 and 1")
         self.p = p_emit_one
 
     def sample(self, length: int, seed: int) -> Sample:
@@ -19,8 +19,7 @@ class GoldenMean(Process):
         A, B = 0, 1
         state = A
 
-        x: List[int] = []
-        latent: List[int] = []
+        x, latent = [], []
 
         for _ in range(length):
             latent.append(state)
