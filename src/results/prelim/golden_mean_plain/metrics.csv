@@ -1,0 +1,3 @@
+seed,process,representation,reconstructor,logloss,n_states,C_mu
+0,golden_mean,last_1,one_step_greedy_merge,0.47048723697540934,2,0.5405003380014081
+0,golden_mean,last_2,one_step_greedy_merge,0.47046893357522346,2,0.5404945580116471
