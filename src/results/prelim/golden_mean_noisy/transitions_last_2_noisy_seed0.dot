@@ -1,0 +1,11 @@
+digraph "golden_mean_last_2_noisy_seed0" {
+  rankdir=LR;
+  node [shape=circle];
+  label="golden_mean | last_2_noisy | seed=0";
+  labelloc=t;
+  0 [label="0"];
+  1 [label="1"];
+  0 -> 1 [label="0"];
+  0 -> 0 [label="1"];
+  1 -> 0 [label="1"];
+}
