@@ -5,12 +5,16 @@ from typing import List, Tuple, Iterable, Optional
 
 from prism.reconstruction.protocols import PredictiveStateModel
 
-
-Edge = Tuple[int, int, int]  # (state, symbol, next_state)
+# (state, symbol, next_state, probability)
+Edge = Tuple[int, int, int, float]  
 
 
 def to_edge_list(model: PredictiveStateModel) -> List[Edge]:
-    return [(s, sym, sp) for (s, sym), sp in model.transitions.items()]
+    edges: List[Edge] = []
+    for (s, sym), sp_dict in model.transitions.items():
+        for sp, prob in sp_dict.items():
+            edges.append((s, sym, sp, float(prob)))
+    return edges
 
 
 def to_dot(
@@ -18,9 +22,10 @@ def to_dot(
     graph_name: str = "state_machine",
     rankdir: str = "LR",
     label: Optional[str] = None,
+    prob_precision: int = 3,
 ) -> str:
     edges = list(edges)
-    nodes = sorted({s for s, _, _ in edges} | {sp for _, _, sp in edges})
+    nodes = sorted({s for s, _, _, _ in edges} | {sp for _, _, sp, _ in edges})
 
     lines = []
     lines.append(f'digraph "{graph_name}" {{')
@@ -34,9 +39,12 @@ def to_dot(
 
     for n in nodes:
         lines.append(f'  {n} [label="{n}"];')
+        
+    def format_prob(p: float) -> str:
+        return f"{p:.{prob_precision}}"
 
-    for s, sym, sp in sorted(edges, key=lambda e: (e[0], e[1], e[2])):
-        lines.append(f'  {s} -> {sp} [label="{sym}"];')
+    for s, sym, sp, p in sorted(edges, key=lambda e: (e[0], e[1], e[2])):
+        lines.append(f'  {s} -> {sp} [label="{sym}: {format_prob(p)}"];')
 
     lines.append("}")
     return "\n".join(lines)
