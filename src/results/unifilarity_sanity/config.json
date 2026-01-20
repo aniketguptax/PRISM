@@ -1,0 +1,14 @@
+{
+  "length": 200000,
+  "process": "even_process",
+  "reconstructor": "one_step_greedy_merge",
+  "representations": [
+    "last_3"
+  ],
+  "save_transitions": false,
+  "seeds": [
+    0
+  ],
+  "train_frac": 0.8,
+  "transitions_rep_name": null
+}

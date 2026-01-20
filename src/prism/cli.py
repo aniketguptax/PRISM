@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--seeds", nargs="+", type=int, default=[0], help="random seeds")
     
     parser.add_argument("--noisy", action="store_true", help="add noise to representation")
-    parser.add_argument("--noise-seed", type=float, default=123, help="noise seed")
+    parser.add_argument("--noise-seed", type=int, default=123, help="noise seed")
     
     parser.add_argument("--outdir", type=Path, default=Path("results/run"))
     parser.add_argument("--save-transitions", action="store_true", help="save state transitions")
@@ -75,8 +75,8 @@ def main():
         if transitions_file.exists():
             edges = json.loads(transitions_file.read_text(encoding="utf-8"))
             print(f"\n{args.show_transitions_for} (seed={seed_to_show}):")
-            for s, sym, sp in sorted(edges, key=lambda e: (e[0], e[1], e[2])):
-                print(f"S{s} --{sym}--> S{sp}")
+            for s, sym, sp, p in sorted(edges, key=lambda e: (e[0], e[1], e[2])):
+                print(f"S{s} --{sym}: {p:.3f}--> S{sp}")
             dot_file = args.outdir / f"{args.process}_{args.show_transitions_for}_seed{seed_to_show}.dot"
             print(f"\nwrote {dot_file}")
         else:
