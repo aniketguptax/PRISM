@@ -28,7 +28,7 @@ class NoisyObservation(Process):
 @dataclass(frozen=True)
 class Subsample(Process):
     base: Process
-    step: int = 2  # keep every step-th sample
+    step: int = 2
 
     @property
     def name(self) -> str:
