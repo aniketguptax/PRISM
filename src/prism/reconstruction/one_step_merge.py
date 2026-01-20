@@ -20,7 +20,6 @@ class OneStepGreedyMerge:
         min_t = rep.lookback
         next_counts: Dict[Rep, Counter] = defaultdict(Counter)
 
-        # Count next-symbol frequencies for each representation r_t
         for t in range(min_t, len(x_train) - 1):
             r = rep(x_train, t)
             y = x_train[t + 1]
