@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import List, Optional
 
-from prism.metrics import log_loss, statistical_complexity, n_states
+from prism.metrics import log_loss, statistical_complexity, n_states, unifilarity_score, mean_branching_entropy
 from prism.utils.io import save_csv, save_json
 from prism.metrics.graph import to_edge_list, to_dot, save_dot
 from prism.processes.protocols import Process
@@ -23,7 +23,17 @@ def run_experiment(
     outdir.mkdir(parents=True, exist_ok=True)
 
     metrics_path = outdir / "metrics.csv"
-    fieldnames = ["seed", "process", "representation", "reconstructor", "logloss", "n_states", "C_mu"]
+    fieldnames = [
+        "seed",
+        "process",
+        "representation",
+        "reconstructor",
+        "logloss",
+        "n_states",
+        "C_mu_empirical",
+        "unifilarity_score",
+        "branch_entropy"
+    ]
     
     for seed in seeds:
         sample = process.sample(length=length, seed=seed)
@@ -43,7 +53,9 @@ def run_experiment(
                 "reconstructor": reconstructor.name,
                 "logloss": log_loss(x_test, rep, model),
                 "n_states": n_states(model),
-                "C_mu": statistical_complexity(model),
+                "C_mu_empirical": statistical_complexity(model),
+                "unifilarity_score": unifilarity_score(model),
+                "branch_entropy": mean_branching_entropy(model, log_base=2.0),
             })
 
             if save_transitions:
@@ -51,7 +63,8 @@ def run_experiment(
                     edges = to_edge_list(model)
                     save_json(outdir / f"transitions_{rep.name}_seed{seed}.json", edges)
                     dot = to_dot(edges, f"{process.name}_{rep.name}_seed{seed}", 
-                                 "LR", f"{process.name} | {rep.name} | seed={seed}")
+                                 "TB", f"{process.name} | {rep.name} | seed={seed}",
+                                 prob_precision=3)
                     save_dot(outdir / f"transitions_{rep.name}_seed{seed}.dot", dot)
 
         save_csv(metrics_path, rows, append=True, fieldnames=fieldnames)
