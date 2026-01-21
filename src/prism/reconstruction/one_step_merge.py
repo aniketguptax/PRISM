@@ -89,15 +89,18 @@ class OneStepGreedyMerge:
         total = sum(counts.values()) or 1
         pi = {s: counts[s] / total for s in counts}
         
-        # Normalise transition counts to probabilities
+        # Normalise transition counts to probabilities and build sa_counts
         transitions: Dict[Tuple[int, int], Dict[int, float]] = {}
+        sa_counts: Dict[Tuple[int, int], int] = {}
         for key, ctr in trans_counts.items():
             denom = sum(ctr.values()) or 1
             transitions[key] = {sp: c / denom for sp, c in ctr.items()}
+            sa_counts[key] = int(sum(ctr.values()))
 
         return PredictiveStateModel(
             rep_to_state=rep_to_state,
             p_next_one=p_next_one,
             pi=pi,
             transitions=transitions,
+            sa_counts=sa_counts,
         )

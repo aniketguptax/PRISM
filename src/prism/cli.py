@@ -1,4 +1,5 @@
 import argparse
+from email import parser
 import json
 from pathlib import Path
 from typing import List
@@ -8,6 +9,7 @@ from prism.experiments.registry import PROCESS_REGISTRY, RECONSTRUCTOR_REGISTRY
 from prism.representations import LastK
 from prism.representations.discrete import LastKWithNoise
 from prism.representations.protocols import Representation
+from prism.processes.wrappers import NoisyObservation, Subsample
 from prism.utils.rng import bernoulli_noise
 
 
@@ -39,6 +41,9 @@ def main():
         default=None,
         help="seed for showing transitions"
     )
+    parser.add_argument("--flip-p", type=float, default=0.0, help="bit-flip probability on observations")
+    parser.add_argument("--subsample-step", type=int, default=1, help="keep every k-th sample")
+
 
     args = parser.parse_args()
 
@@ -51,6 +56,12 @@ def main():
         reps = [LastKWithNoise(k=k, noise=noise) for k in args.ks]
     else:
         reps = [LastK(k=k) for k in args.ks]
+        
+    if args.flip_p > 0.0:
+        process = NoisyObservation(base=process, flip_p=args.flip_p)
+    
+    if args.subsample_step > 1:
+        process = Subsample(base=process, step=args.subsample_step)
 
     run_experiment(
         process=process,
