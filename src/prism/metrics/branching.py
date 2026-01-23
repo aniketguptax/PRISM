@@ -36,21 +36,8 @@ def mean_branching_entropy(model: PredictiveStateModel, log_base: float = math.e
 
 
 def mean_branching_entropy_weighted(model: PredictiveStateModel, log_base: float = math.e) -> float:
-    """
-    Weighted variant using the same proxy weights as unifilarity_score:
-
-      w(s,1) = pi[s] * p_next_one[s]
-      w(s,0) = pi[s] * (1 - p_next_one[s])
-
-    This approximates the expected branching entropy under the model's empirical state occupancy.
-    """
     if not model.transitions:
         return 0.0
-
-    def weight(s: int, sym: int) -> float:
-        pi_s = model.pi.get(s, 0.0)
-        p1 = model.p_next_one.get(s, 0.5)
-        return pi_s * (p1 if sym == 1 else (1.0 - p1))
 
     total_w = 0.0
     total = 0.0
@@ -58,15 +45,15 @@ def mean_branching_entropy_weighted(model: PredictiveStateModel, log_base: float
     for (s, sym), dist in model.transitions.items():
         if not dist:
             continue
+
         h = 0.0
         for p in dist.values():
-            if p <= 0.0:
-                continue
-            h -= p * math.log(p)
+            if p > 0.0:
+                h -= p * math.log(p)
         if log_base != math.e:
             h /= math.log(log_base)
 
-        w = weight(s, sym)
+        w = float(model.sa_counts.get((s, sym), 0))
         total_w += w
         total += w * h
 

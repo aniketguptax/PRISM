@@ -5,6 +5,8 @@ from typing import List, Tuple, Iterable, Optional
 
 from prism.reconstruction.protocols import PredictiveStateModel
 
+import subprocess
+
 # (state, symbol, next_state, probability)
 Edge = Tuple[int, int, int, float]  
 
@@ -53,3 +55,6 @@ def to_dot(
 def save_dot(path: Path, dot: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dot, encoding="utf-8")
+
+def dot_to_png(dot_path: Path, png_path: Path) -> None:
+    subprocess.run(["dot", "-Tpng", str(dot_path), "-o", str(png_path)], check=True)

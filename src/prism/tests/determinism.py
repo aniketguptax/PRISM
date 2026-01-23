@@ -15,12 +15,13 @@ def _learn(seed: int):
 
     model = recon.fit(x_train, rep, seed=seed)
 
-    # Compare only pure-data structures (dict ordering is stable in Py3.7+)
+    # Compare only pure-data structures
     return {
         "rep_to_state": model.rep_to_state,
         "p_next_one": model.p_next_one,
         "pi": model.pi,
         "transitions": model.transitions,
+        "sa_counts": model.sa_counts,
     }
 
 
