@@ -36,16 +36,39 @@ def save_csv(
     fieldnames: Optional[list[str]] = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    
     if not rows:
         return
 
     if fieldnames is None:
-        fieldnames = list(rows[0].keys())
+        keys = set()
+        for r in rows:
+            keys.update(r.keys())
+        fieldnames = sorted(keys)
 
-    exists = path.exists()
+    file_exists = path.exists()
     mode = "a" if append else "w"
+    
+    write_header = (not append) or (not file_exists)
+    
+    if append and file_exists:
+        with path.open("r", newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            existing_header = next(reader, None)
+            
+        if existing_header is None:
+            write_header = True
+        else:
+            if list(existing_header) != list(fieldnames):
+                raise ValueError(
+                    f"CSV header mismatch when appending to {path}.\n"
+                    f"Existing: {existing_header}\n"
+                    f"New:      {fieldnames}\n"
+                    f"Use a fresh outdir or delete the old CSV."
+                )
+                
     with path.open(mode, newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not append or not exists:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        if write_header:
             writer.writeheader()
         writer.writerows(rows)

@@ -1,0 +1,2 @@
+seed,length,train_frac,process,base_process,flip_p,subsample_step,wrappers,representation,k,reconstructor,logloss,n_states,C_mu_empirical,unifilarity_score,branch_entropy
+0,20000,0.8,even_process,even_process,0.0,1,,last_2,2,one_step_greedy_merge,0.41706091308145005,3,0.8165538026203305,1.0,0.0
