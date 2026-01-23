@@ -55,7 +55,7 @@ Initial runs were done at 500k samples, with eps fixed.
 
 Some things worked immediately:
 
-- Log-loss drops sharply from k=1 → k=2
+- Log-loss drops sharply from k=1 to k=2
 - Log-loss completely plateaus for k≥2
 - For k=2 and k=3:
   - Unifilarity = 1.0 across all seeds
