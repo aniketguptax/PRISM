@@ -3,8 +3,7 @@ import csv
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
-
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 from matplotlib.markers import MarkerStyle
@@ -17,6 +16,9 @@ class Row:
     k: int
     branch_mean: float
     unif_mean: float
+    base_process: str
+    representation: str
+    condition_id: str
 
 
 def read_rows(path: Path) -> List[Row]:
@@ -38,36 +40,41 @@ def read_rows(path: Path) -> List[Row]:
             rows.append(
                 Row(
                     flip_p=float(r["flip_p"]),
-                    subsample_step=int(r["subsample_step"]),
-                    k=int(r["k"]),
+                    subsample_step=int(float(r["subsample_step"])),
+                    k=int(float(r["k"])),
                     branch_mean=float(r["branch_entropy_mean"]),
                     unif_mean=float(r["unifilarity_score_mean"]),
+                    base_process=r.get("base_process", ""),
+                    representation=r.get("representation", ""),
+                    condition_id=r.get("condition_id", ""),
                 )
             )
     return rows
 
-
-def unique_sorted(xs: List[float]) -> List[float]:
-    return sorted(set(xs))
-
-
-def build_grid(
+def filter_rows(
     rows: List[Row],
-) -> Tuple[List[int], List[float], List[List[float]], List[List[float]]]:
-    """
-    Returns:
-      ks: sorted unique k values
-      flip_ps: sorted unique flip probabilities
-      branch_grid[j][i] where j indexes flip_p, i indexes k
-      one_minus_unif_grid[j][i]
-    """
+    base_process: Optional[str],
+    representation: Optional[str],
+    condition_id: Optional[str],
+) -> List[Row]:
+    out: List[Row] = []
+    for r in rows:
+        if base_process is not None and r.base_process != base_process:
+            continue
+        if representation is not None and r.representation != representation:
+            continue
+        if condition_id is not None and r.condition_id != condition_id:
+            continue
+        out.append(r)
+    return out
+
+def build_grid(rows: List[Row]) -> Tuple[List[int], List[float], List[List[float]], List[List[float]]]:
     ks = sorted(set(r.k for r in rows))
     flip_ps = sorted(set(r.flip_p for r in rows))
 
     k_index: Dict[int, int] = {k: i for i, k in enumerate(ks)}
     f_index: Dict[float, int] = {fp: j for j, fp in enumerate(flip_ps)}
 
-    # initialise with NaNs
     branch_grid = [[math.nan for _ in ks] for _ in flip_ps]
     omu_grid = [[math.nan for _ in ks] for _ in flip_ps]
 
@@ -79,6 +86,26 @@ def build_grid(
 
     return ks, flip_ps, branch_grid, omu_grid
 
+def make_closed_mask(
+    ks: List[int],
+    flip_ps: List[float],
+    branch_grid: List[List[float]],
+    omu_grid: List[List[float]],
+    unif_threshold: float,
+    branch_threshold: float,
+) -> List[List[bool]]:
+    # omu_grid = 1 - unif, so unif >= T  <=>  omu <= 1-T
+    omu_thresh = 1.0 - unif_threshold
+    mask: List[List[bool]] = [[False for _ in ks] for _ in flip_ps]
+    
+    for j in range(len(flip_ps)):
+        for i in range(len(ks)):
+            b = branch_grid[j][i]
+            omu = omu_grid[j][i]
+            if math.isnan(b) or math.isnan(omu):
+                continue
+            mask[j][i] = (omu <= omu_thresh) and (b <= branch_threshold)
+    return mask
 
 def plot_heatmap(
     ks: List[int],
@@ -87,11 +114,10 @@ def plot_heatmap(
     title: str,
     ylabel: str,
     outpath: Path,
-    closed_mask: List[List[bool]] | None = None,
+    closed_mask: Optional[List[List[bool]]] = None,
 ) -> None:
     plt.figure(figsize=(6.2, 3.6))
 
-    # imshow expects rows=y, cols=x
     im = plt.imshow(
         grid,
         origin="lower",
@@ -132,27 +158,6 @@ def plot_heatmap(
     print(f"Wrote {outpath}")
 
 
-def make_closed_mask(
-    ks: List[int],
-    flip_ps: List[float],
-    branch_grid: List[List[float]],
-    omu_grid: List[List[float]],
-    unif_threshold: float,
-    branch_threshold: float,
-) -> List[List[bool]]:
-    # omu_grid = 1 - unif, so unif >= T  <=>  omu <= 1-T
-    omu_thresh = 1.0 - unif_threshold
-    mask: List[List[bool]] = [[False for _ in ks] for _ in flip_ps]
-    for j in range(len(flip_ps)):
-        for i in range(len(ks)):
-            b = branch_grid[j][i]
-            omu = omu_grid[j][i]
-            if math.isnan(b) or math.isnan(omu):
-                continue
-            mask[j][i] = (omu <= omu_thresh) and (b <= branch_threshold)
-    return mask
-
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -161,7 +166,15 @@ def main() -> None:
     parser.add_argument("--unif-threshold", type=float, default=0.98, help="Unifilarity threshold")
     parser.add_argument("--branch-threshold", type=float, default=0.02, help="Branching entropy threshold (bits)")
     parser.add_argument("--process-name", type=str, default=None, help="Name of the process (for plot titles)")
+    
     parser.add_argument("--ylabel", type=str, default="flip probability $p$", help="Y-axis label for plots")
+    parser.add_argument("--metric", choices=["branch", "omu", "both"], default="both", help="Which metric(s) to plot")
+    
+    # fiter options
+    parser.add_argument("--base-process", type=str, default=None, help="Name of the base process to filter")
+    parser.add_argument("--representation", type=str, default=None, help="Name of the representation to filter")
+    parser.add_argument("--condition-id", type=str, default=None, help="Condition ID to filter")
+    
     args = parser.parse_args()
 
     summary_csv = args.root / args.infile
@@ -169,6 +182,12 @@ def main() -> None:
         raise FileNotFoundError(f"Missing {summary_csv}")
 
     all_rows = read_rows(summary_csv)
+    all_rows = filter_rows(
+        all_rows,
+        base_process=args.base_process,
+        representation=args.representation,
+        condition_id=args.condition_id,
+    )
 
     # group by subsample step
     steps = sorted(set(r.subsample_step for r in all_rows))
@@ -180,6 +199,10 @@ def main() -> None:
 
     for step in steps:
         rows = [r for r in all_rows if r.subsample_step == step]
+        if not rows:
+            print(f"No data for subsample step {step}, skipping.")
+            continue
+        
         ks, flip_ps, branch_grid, omu_grid = build_grid(rows)
 
         closed_mask = make_closed_mask(
@@ -190,26 +213,28 @@ def main() -> None:
             unif_threshold=args.unif_threshold,
             branch_threshold=args.branch_threshold,
         )
-
-        plot_heatmap(
-            ks,
-            flip_ps,
-            branch_grid,
-            title=f"{process_prefix}mean branching entropy (subsample={step})",
-            ylabel=args.ylabel,
-            outpath=figs_dir / f"phase_branch_entropy_sub{step}.pdf",
-            closed_mask=closed_mask,
-        )
-
-        plot_heatmap(
-            ks,
-            flip_ps,
-            omu_grid,
-            title=f"{process_prefix}mean $1-\\,$unifilarity (subsample={step})",
-            ylabel=args.ylabel,
-            outpath=figs_dir / f"phase_one_minus_unif_sub{step}.pdf",
-            closed_mask=closed_mask,
-        )
+        
+        if args.metric in ("branch", "both"):
+            plot_heatmap(
+                ks,
+                flip_ps,
+                branch_grid,
+                title=f"{process_prefix}mean branching entropy (subsample={step})",
+                ylabel=args.ylabel,
+                outpath=figs_dir / f"phase_branch_entropy_sub{step}.pdf",
+                closed_mask=closed_mask,
+            )
+        
+        if args.metric in ("omu", "both"):
+            plot_heatmap(
+                ks,
+                flip_ps,
+                omu_grid,
+                title=f"{process_prefix}mean $1-\\,$unifilarity (subsample={step})",
+                ylabel=args.ylabel,
+                outpath=figs_dir / f"phase_one_minus_unif_sub{step}.pdf",
+                closed_mask=closed_mask,
+            )
 
     print("Done.")
 
