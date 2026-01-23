@@ -20,6 +20,9 @@ class PredictiveStateModel:
     # P(s_{t+1} = sp | s_t = s, x_{t+1} = sym)
     # keyed by (s, sym), valued by dict of {sp: prob}
     transitions: Dict[Tuple[int, int], Dict[int, float]]
+    
+    # Empirical counts of (state, sym) occurences in training
+    sa_counts: Dict[Tuple[int, int], int]
 
 
 class Reconstructor(Protocol):

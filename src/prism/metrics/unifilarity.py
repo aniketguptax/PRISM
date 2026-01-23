@@ -6,26 +6,18 @@ from prism.reconstruction.protocols import PredictiveStateModel
 
 def unifilarity_score(model: PredictiveStateModel) -> float:
     """
-    Weighted unifilarity score in [0, 1].
-
-    For each (state s, symbol a), define u(s,a) = max_{s'} P(s'|s,a).
-    Aggregate as a weighted average with weights proportional to how often (s,a)
-    occurs in the model's empirical state distribution pi and the emission model
-    p_next_one.
-
-    Weight approximation:
-      w(s,1) = pi[s] * p_next_one[s]
-      w(s,0) = pi[s] * (1 - p_next_one[s])
-
-    This avoids needing raw transition counts and is stable across runs.
+    Unifilarity score: weighted mean of local unifilarities per (state, symbol), where weights
+    are proportional to empirical visitation counts of (state, symbol) pairs in training data.
+    
+    Local unifilarity for (s, sym) is defined as the maximum next-state probability:
+        u(s, sym) = max_{s'} P(s_{t+1}=s' | s_t=s, x_{t+1}=sym)
+    The overall score is:
+        U = sum_{(s,sym)} w(s,sym) * u(s,sym) / sum_{(s,sym)} w(s,sym)
+    where weights are:
+        w(s,sym) = count((s_t=s, x_{t+1}=sym)) in training data
     """
     if not model.transitions:
         return 0.0
-
-    def weight(s: int, sym: int) -> float:
-        pi_s = model.pi.get(s, 0.0)
-        p1 = model.p_next_one.get(s, 0.5)
-        return pi_s * (p1 if sym == 1 else (1.0 - p1))
 
     total_w = 0.0
     total = 0.0
@@ -37,7 +29,7 @@ def unifilarity_score(model: PredictiveStateModel) -> float:
         # local unifilarity: maximum next-state probability
         u = max(dist.values())
 
-        w = weight(s, sym)
+        w = float(model.sa_counts.get((s, sym), 0))
         total_w += w
         total += w * u
 
@@ -45,7 +37,5 @@ def unifilarity_score(model: PredictiveStateModel) -> float:
         # Fallback to unweighted mean if weights are degenerate
         vals = [max(dist.values()) for dist in model.transitions.values() if dist]
         return sum(vals) / (len(vals) or 1)
-
-    score = total / total_w
-    # numerical guard
-    return max(0.0, min(1.0, score))
+     
+    return max(0.0, min(1.0, total / total_w))

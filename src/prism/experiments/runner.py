@@ -1,9 +1,10 @@
 from pathlib import Path
 from typing import List, Optional
 
-from prism.metrics import log_loss, statistical_complexity, n_states, unifilarity_score, mean_branching_entropy
+from prism.metrics import log_loss, statistical_complexity, n_states, unifilarity_score
+from prism.metrics.branching import mean_branching_entropy_weighted
 from prism.utils.io import save_csv, save_json
-from prism.metrics.graph import to_edge_list, to_dot, save_dot
+from prism.metrics.graph import dot_to_png, to_edge_list, to_dot, save_dot
 from prism.processes.protocols import Process
 from prism.reconstruction.protocols import Reconstructor
 from prism.representations.protocols import Representation
@@ -55,7 +56,7 @@ def run_experiment(
                 "n_states": n_states(model),
                 "C_mu_empirical": statistical_complexity(model),
                 "unifilarity_score": unifilarity_score(model),
-                "branch_entropy": mean_branching_entropy(model, log_base=2.0),
+                "branch_entropy": mean_branching_entropy_weighted(model, log_base=2.0),
             })
 
             if save_transitions:
@@ -66,6 +67,10 @@ def run_experiment(
                                  "TB", f"{process.name} | {rep.name} | seed={seed}",
                                  prob_precision=3)
                     save_dot(outdir / f"transitions_{rep.name}_seed{seed}.dot", dot)
+                    dot_to_png(
+                        outdir / f"transitions_{rep.name}_seed{seed}.dot",
+                        outdir / f"transitions_{rep.name}_seed{seed}.png"
+                    )
 
         save_csv(metrics_path, rows, append=True, fieldnames=fieldnames)
 
