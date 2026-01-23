@@ -8,3 +8,4 @@ Predictive Representations for Inference of Scale and Macrostates
 - IIDBernoulli
 - MarkovOrder1
 - SimpleNonUnifilarSource
+- MarkovOrder 2
