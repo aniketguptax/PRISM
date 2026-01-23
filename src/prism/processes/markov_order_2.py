@@ -13,7 +13,7 @@ class MarkovOrder2(Process):
 
     @property
     def name(self) -> str:
-        return "markov_order2"
+        return "markov_order_2"
 
     def __init__(self, p: Optional[Dict[Tuple[int, int], float]] = None):
         # default: deliberately different futures across contexts
