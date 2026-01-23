@@ -145,3 +145,14 @@ streamlit run src/prism/frontend/app.py
 ```
 
 The frontend is intentionally minimal and mostly wraps the existing CLI and analysis scripts.
+
+---
+
+## Help
+
+For help with the pipeline, try:
+```bash
+python -m prism.cli --help
+```
+
+Otherwise, get in touch with me.
