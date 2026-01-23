@@ -2,15 +2,16 @@ from dataclasses import dataclass
 from collections import Counter, defaultdict
 from typing import Dict, Hashable, List, Tuple
 
-from .protocols import PredictiveStateModel
+from .protocols import PredictiveStateModel, Reconstructor
 
 
 Rep = Hashable
 
 
-@dataclass(frozen=True)
-class OneStepGreedyMerge:
-    eps: float = 0.02
+@dataclass
+class OneStepGreedyMerge(Reconstructor):
+    def __init__(self, eps: float = 0.02):
+        self.eps = eps
     
     @property
     def name(self) -> str:
