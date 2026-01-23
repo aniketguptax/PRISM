@@ -1,5 +1,5 @@
 import random
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 
 from .protocols import Process, Sample
 
@@ -15,7 +15,7 @@ class MarkovOrder2(Process):
     def name(self) -> str:
         return "markov_order2"
 
-    def __init__(self, p: Dict[Tuple[int, int], float] | None = None):
+    def __init__(self, p: Optional[Dict[Tuple[int, int], float]] = None):
         # default: deliberately different futures across contexts
         if p is None:
             p = {
