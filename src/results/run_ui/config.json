@@ -1,0 +1,30 @@
+{
+  "condition_id_style": "flip_sub",
+  "flip_ps": [
+    0.0
+  ],
+  "length": 470000,
+  "noise_seed": 123,
+  "noisy_representation": true,
+  "process": "sns",
+  "reconstructor": "one_step",
+  "representations": [
+    "last_2_noisy",
+    "last_3_noisy",
+    "last_4_noisy",
+    "last_5_noisy"
+  ],
+  "save_transitions": true,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "subsample_steps": [
+    1
+  ],
+  "train_frac": 0.8,
+  "transitions_rep_name": "last_2"
+}
