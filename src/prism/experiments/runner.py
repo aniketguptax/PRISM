@@ -51,6 +51,7 @@ def run_experiment(
         "train_frac",
         "process",
         "base_process",
+        "eps",
         "flip_p",
         "subsample_step",
         "wrappers",
@@ -82,12 +83,14 @@ def run_experiment(
         for rep in representations:
             model = reconstructor.fit(x_train, rep, seed=seed)
             k = _extract_k(rep.name)
+            eps = getattr(reconstructor, "eps", None)
                         
             rows.append({
                 "seed": seed,
                 "length": length,
                 "train_frac": train_frac,
                 "process": process.name,
+                "eps": eps,
                 **cond,
                 "representation": rep.name,
                 "k": k,

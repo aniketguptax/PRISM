@@ -65,6 +65,7 @@ def main():
     parser.add_argument("--length", type=int, default=400_000)
     parser.add_argument("--train-frac", type=float, default=0.8)
     parser.add_argument("--seeds", nargs="+", type=int, default=[0], help="random seeds")
+    parser.add_argument("--eps", type=float, default=0.02, help="Epsilon for OneStepGreedyMerge")
     
     # output settings
     parser.add_argument("--noisy", action="store_true", help="add noise to representation")
@@ -119,12 +120,16 @@ def main():
     else:
         reps = [LastK(k=k) for k in args.ks]
     
-    reconstructor = RECONSTRUCTOR_REGISTRY[args.reconstructor]()
+    if args.eps is None:
+        reconstructor = RECONSTRUCTOR_REGISTRY[args.reconstructor]()
+    else:
+        reconstructor = RECONSTRUCTOR_REGISTRY[args.reconstructor](eps=args.eps)
     
     # write sweep-level config
     config = {
         "process": args.process,
         "reconstructor": args.reconstructor,
+        "eps": getattr(reconstructor, "eps", None),
         "length": args.length,
         "train_frac": args.train_frac,
         "seeds": args.seeds,
