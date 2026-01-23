@@ -1,0 +1,37 @@
+{
+  "condition_id_style": "flip_sub",
+  "flip_ps": [
+    0.0
+  ],
+  "length": 1000000,
+  "noise_seed": null,
+  "noisy_representation": false,
+  "process": "markov_order_2",
+  "reconstructor": "one_step",
+  "representations": [
+    "last_1",
+    "last_2",
+    "last_3",
+    "last_4",
+    "last_5",
+    "last_6"
+  ],
+  "save_transitions": true,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+  ],
+  "subsample_steps": [
+    1
+  ],
+  "train_frac": 0.8,
+  "transitions_rep_name": "last_2"
+}

@@ -1,0 +1,22 @@
+digraph "markov_order_2_last_6_seed0" {
+  rankdir=TB;
+  node [shape=circle];
+  label="markov_order_2 | last_6 | seed=0 | flip0_sub1";
+  labelloc=t;
+  0 [label="0"];
+  1 [label="1"];
+  2 [label="2"];
+  3 [label="3"];
+  4 [label="4"];
+  0 -> 0 [label="0: 1.0"];
+  0 -> 4 [label="1: 1.0"];
+  1 -> 2 [label="0: 1.0"];
+  1 -> 1 [label="1: 1.0"];
+  2 -> 0 [label="0: 1.0"];
+  2 -> 4 [label="1: 1.0"];
+  3 -> 0 [label="0: 1.0"];
+  3 -> 4 [label="1: 1.0"];
+  4 -> 2 [label="0: 0.972"];
+  4 -> 3 [label="0: 0.0279"];
+  4 -> 1 [label="1: 1.0"];
+}

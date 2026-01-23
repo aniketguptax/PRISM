@@ -10,7 +10,7 @@ class MarkovOrder1(Process):
     """
     @property
     def name(self) -> str:
-        return "markov_order1"
+        return "markov_order_1"
 
     def __init__(self, p01: float = 0.8, p11: float = 0.2):
         for p in (p01, p11):
