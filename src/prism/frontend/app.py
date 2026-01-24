@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -16,7 +17,9 @@ if str(SRC) not in sys.path:
 
 
 def run(cmd: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:
-    p = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(SRC)
+    p = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True, env=env)
     return p.returncode, p.stdout, p.stderr
 
 
