@@ -1,4 +1,4 @@
-# PRISM
+# PRISM (Work in Progress)
 
 Predictive Representations for Inference of Scale and Macrostates
 
