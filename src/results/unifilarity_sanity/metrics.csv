@@ -1,2 +1,0 @@
-seed,process,representation,reconstructor,logloss,n_states,C_mu_empirical,unifilarity_score
-0,even_process,last_3,one_step_greedy_merge,0.42756336670761214,3,0.9380895763352264,0.9134415860396511
