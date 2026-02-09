@@ -3,17 +3,23 @@ from typing import List, Optional, Dict, Any
 
 from prism.metrics import log_loss, statistical_complexity, n_states, unifilarity_score
 from prism.metrics.branching import mean_branching_entropy_weighted
+from prism.metrics.gaussian_predictive import gaussian_log_loss
 from prism.utils.io import save_csv, save_json
 from prism.metrics.graph import DotStyle, dot_to_png, to_edge_list, to_dot, save_dot
 from prism.processes.protocols import Process
 from prism.reconstruction.protocols import Reconstructor
+from prism.reconstruction.iss_merge import GaussianPredictiveStateModel
 from prism.representations.protocols import Representation
 
 def _extract_k(rep_name: str) -> Optional[int]:
-    # e.g. "last_3" -> 3, "last_5_noisy" -> 5
     import re
     m = re.search(r"last_(\d+)", rep_name)
-    return int(m.group(1)) if m else None
+    if m:
+        return int(m.group(1))
+    m = re.search(r"iss_d(\d+)", rep_name)
+    if m:
+        return int(m.group(1))
+    return None
 
 def _cond_fields(condition: Optional[Dict[str, Any]], process_name_fallback: str) -> Dict[str, Any]:
     cond = condition or {}
@@ -95,7 +101,7 @@ def run_experiment(
                 "representation": rep.name,
                 "k": k,
                 "reconstructor": reconstructor.name,
-                "logloss": log_loss(x_test, rep, model),
+                "logloss": gaussian_log_loss(x_test, model) if isinstance(model, GaussianPredictiveStateModel) else log_loss(x_test, rep, model),
                 "n_states": n_states(model),
                 "C_mu_empirical": statistical_complexity(model),
                 "unifilarity_score": unifilarity_score(model),

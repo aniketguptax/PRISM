@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from collections import Counter, defaultdict
-from typing import Dict, Hashable, List, Tuple
+from typing import Dict, Hashable, List, Sequence, Tuple
+
+from prism.processes.protocols import Obs
 
 from .protocols import PredictiveStateModel, Reconstructor
 
@@ -17,7 +19,20 @@ class OneStepGreedyMerge(Reconstructor):
     def name(self) -> str:
         return "one_step_greedy_merge"
 
-    def fit(self, x_train: List[int], rep, seed: int = 0) -> PredictiveStateModel:
+    def fit(self, x_train: Sequence[Obs], rep, seed: int = 0) -> PredictiveStateModel:
+        # Ensure discrete binary ints
+        x_train_int: List[int] = []
+        for i, v in enumerate(x_train):
+            if not isinstance(v, int):
+                raise TypeError(
+                    f"OneStepGreedyMerge expects discrete int observations, got {type(v).__name__} at index {i}."
+                )
+            if v not in (0, 1):
+                raise ValueError(f"OneStepGreedyMerge expects observations in {{0,1}}, got {v} at index {i}.")
+            x_train_int.append(v)
+
+        x_train = x_train_int
+
         min_t = rep.lookback
         next_counts: Dict[Rep, Counter] = defaultdict(Counter)
 

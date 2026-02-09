@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from typing import Dict, Hashable, List, Protocol, Tuple
+from typing import Dict, Hashable, Protocol, Sequence, Tuple
+
+from prism.representations.protocols import Obs
 
 
 Rep = Hashable
@@ -30,5 +32,5 @@ class Reconstructor(Protocol):
     def name(self) -> str:
         ...
 
-    def fit(self, x_train: List[int], rep, seed: int = 0) -> PredictiveStateModel:
+    def fit(self, x_train: Sequence[Obs], rep, seed: int = 0) -> PredictiveStateModel:
         ...
