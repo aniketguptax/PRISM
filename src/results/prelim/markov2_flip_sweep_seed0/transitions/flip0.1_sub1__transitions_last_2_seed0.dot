@@ -1,0 +1,18 @@
+digraph "markov_order_2_flip0.1_last_2_seed0" {
+  rankdir=TB;
+  node [shape=circle];
+  label="markov_order_2_flip0.1 | last_2 | seed=0 | flip0.1_sub1";
+  labelloc=t;
+  0 [label="0"];
+  1 [label="1"];
+  2 [label="2"];
+  3 [label="3"];
+  0 -> 0 [label="0: 1.0"];
+  0 -> 3 [label="1: 1.0"];
+  1 -> 2 [label="0: 1.0"];
+  1 -> 1 [label="1: 1.0"];
+  2 -> 0 [label="0: 1.0"];
+  2 -> 3 [label="1: 1.0"];
+  3 -> 2 [label="0: 1.0"];
+  3 -> 1 [label="1: 1.0"];
+}

@@ -1,0 +1,28 @@
+{
+  "condition_id_style": "flip_sub",
+  "eps": 0.02,
+  "flip_ps": [
+    0.0
+  ],
+  "length": 200000,
+  "noise_seed": null,
+  "noisy_representation": false,
+  "process": "even_process",
+  "reconstructor": "one_step",
+  "representations": [
+    "last_8"
+  ],
+  "save_transitions": true,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "subsample_steps": [
+    1
+  ],
+  "train_frac": 0.8,
+  "transitions_rep_name": "last_8"
+}
