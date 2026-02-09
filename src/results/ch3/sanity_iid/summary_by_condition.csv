@@ -1,0 +1,2 @@
+base_process,condition_id,flip_p,subsample_step,reconstructor,representation,k,n,logloss_mean,logloss_std,n_states_mean,n_states_std,C_mu_empirical_mean,C_mu_empirical_std,unifilarity_score_mean,unifilarity_score_std,branch_entropy_mean,branch_entropy_std
+iid_bernoulli,flip0_sub1,0.0,1,one_step_greedy_merge,last_1,1,1,0.6931447731364504,0.0,1.0,0.0,0.0,0.0,1.0,0.0,0.0,0.0

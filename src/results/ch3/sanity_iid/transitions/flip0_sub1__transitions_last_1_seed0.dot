@@ -1,0 +1,19 @@
+digraph "iid_bernoulli_last_1_seed0" {
+  rankdir=LR;
+  splines=true;
+  overlap=false;
+  concentrate=false;
+  outputorder=edgesfirst;
+  nodesep=0.9;
+  ranksep=1.1;
+  pad=0.25;
+  forcelabels=true;
+  graph [fontname="Helvetica", fontsize=18, fontcolor="#222222"];
+  node [shape=circle, fontname="Helvetica", fontsize=15, penwidth=1.8, color="#222222", fontcolor="#222222", margin=0.06, fixedsize=true, width=1.0, height=1.0];
+  edge [fontname="Helvetica", fontsize=12, arrowsize=1.0, penwidth=1.6, color="#222222", fontcolor="#222222", labelfloat=true];
+  label="iid_bernoulli | last_1 | seed=0 | flip0_sub1";
+  labelloc=t;
+  labeljust=l;
+  0 [label="S0"];
+  0 -> 0 [minlen=2, label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>0</B>:</TD><TD ALIGN="LEFT">1.000</TD></TR><TR><TD ALIGN="RIGHT"><B>1</B>:</TD><TD ALIGN="LEFT">1.000</TD></TR></TABLE>>];
+}
