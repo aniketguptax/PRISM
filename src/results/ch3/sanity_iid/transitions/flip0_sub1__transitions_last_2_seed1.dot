@@ -1,0 +1,16 @@
+digraph "iid_bernoulli_last_2_seed1" {
+  rankdir=LR;
+  splines=true;
+  overlap=false;
+  nodesep=0.35;
+  ranksep=0.55;
+  pad=0.2;
+  graph [fontname="Helvetica", fontsize=14];
+  node [shape=circle, fontname="Helvetica", fontsize=12, penwidth=1.2];
+  edge [fontname="Helvetica", fontsize=11, arrowsize=0.75, penwidth=1.2, labelfloat=true, labeldistance=1.6, labelangle=25.0];
+  label="iid_bernoulli | last_2 | seed=1 | flip0_sub1";
+  labelloc=t;
+  labeljust=l;
+  0 [label="0"];
+  0 -> 0 [label="0: 1.000\n1: 1.000", penwidth=1.2, minlen=2];
+}

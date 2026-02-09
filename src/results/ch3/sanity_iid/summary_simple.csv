@@ -1,0 +1,2 @@
+base_process,flip_p,subsample_step,k,logloss_mean,logloss_std,unifilarity_score_mean,unifilarity_score_std,branch_entropy_mean,branch_entropy_std
+iid_bernoulli,0.0,1,1,0.6931447731364504,0.0,1.0,0.0,0.0,0.0
