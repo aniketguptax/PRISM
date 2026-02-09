@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Sequence, Tuple
 
-from .protocols import Representation
+from .protocols import Obs, Representation
 
 
 @dataclass(frozen=True)
@@ -20,15 +20,15 @@ class LastK(Representation):
     def lookback(self) -> int:
         return self.k - 1
 
-    def __call__(self, x: List[int], t: int) -> Tuple[int, ...]:
+    def __call__(self, x: Sequence[Obs], t: int) -> Tuple[int, ...]:
         start = t - self.k + 1
-        return tuple(x[start : t + 1])
+        return tuple(int(v) for v in x[start : t + 1])
 
 
 @dataclass(frozen=True)
 class LastKWithNoise(Representation):
     k: int
-    noise: List[int]
+    noise: Sequence[int]
 
     def __post_init__(self):
         if self.k < 1:
@@ -42,6 +42,6 @@ class LastKWithNoise(Representation):
     def lookback(self) -> int:
         return self.k - 1
 
-    def __call__(self, x: List[int], t: int) -> Tuple[int, ...]:
+    def __call__(self, x: Sequence[Obs], t: int) -> Tuple[int, ...]:
         start = t - self.k + 1
-        return tuple(x[start : t + 1]) + (self.noise[t],)
+        return tuple(int(v) for v in x[start : t + 1]) + (int(self.noise[t]),)

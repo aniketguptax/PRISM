@@ -1,11 +1,12 @@
 from dataclasses import dataclass
-from typing import List, Optional, Protocol
+from typing import Optional, Protocol, Sequence, Union
 
+Obs = Union[int, float]
 
 @dataclass(frozen=True)
 class Sample:
-    x: List[int]
-    latent: Optional[List[int]] = None
+    x: Sequence[Obs]
+    latent: Optional[Sequence[int]] = None
 
 
 class Process(Protocol):

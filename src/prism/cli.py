@@ -7,6 +7,7 @@ from datetime import datetime
 from prism.experiments.runner import run_experiment
 from prism.experiments.registry import PROCESS_REGISTRY, RECONSTRUCTOR_REGISTRY
 from prism.representations import LastK
+from prism.representations.continuous import ISSDim
 from prism.representations.discrete import LastKWithNoise
 from prism.representations.protocols import Representation
 from prism.processes.wrappers import NoisyObservation, Subsample
@@ -59,6 +60,18 @@ def main():
     # core experiment settings
     parser.add_argument("--process", required=True, choices=PROCESS_REGISTRY.keys())
     parser.add_argument("--reconstructor", default="one_step", choices=RECONSTRUCTOR_REGISTRY.keys())
+    
+    # continuous data loading (for process=continuous_file)
+    parser.add_argument("--data-path", type=Path, default=None, help="Path to .npy/.csv/.txt time series")
+    parser.add_argument("--data-column", type=int, default=None, help="Column index for 2D npy or CSV")
+    
+        # kalman ISS reconstructor params
+    parser.add_argument("--latent-dim", type=int, default=4, help="Latent dimension for Kalman ISS")
+    parser.add_argument("--em-iters", type=int, default=50, help="EM iterations for Kalman ISS")
+    parser.add_argument("--em-tol", type=float, default=1e-4, help="EM convergence tolerance")
+    parser.add_argument("--em-ridge", type=float, default=1e-6, help="Ridge stabiliser for EM")
+    parser.add_argument("--eps-mu", type=float, default=0.10, help="Merge threshold in predictive mean space")
+    parser.add_argument("--eps-logdet", type=float, default=0.25, help="Merge threshold in log-variance space")
     
     # representation settings
     parser.add_argument("--ks", nargs="+", type=int, required=True, help="k values for LastK")
@@ -114,16 +127,29 @@ def main():
 
     # prepare representations
     reps: List[Representation] = []
-    if args.noisy:
-        noise = bernoulli_noise(length=args.length, seed=args.noise_seed)
-        reps = [LastKWithNoise(k=k, noise=noise) for k in args.ks]
+    if args.reconstructor == "kalman_iss":
+        reps = [ISSDim(d=k) for k in args.ks]
     else:
-        reps = [LastK(k=k) for k in args.ks]
+        if args.noisy:
+            noise = bernoulli_noise(length=args.length, seed=args.noise_seed)
+            reps = [LastKWithNoise(k=k, noise=noise) for k in args.ks]
+        else:
+            reps = [LastK(k=k) for k in args.ks]
     
-    if args.eps is None:
-        reconstructor = RECONSTRUCTOR_REGISTRY[args.reconstructor]()
+    if args.reconstructor == "kalman_iss":
+        reconstructor = RECONSTRUCTOR_REGISTRY[args.reconstructor](
+            latent_dim=args.latent_dim,
+            em_iters=args.em_iters,
+            em_tol=args.em_tol,
+            em_ridge=args.em_ridge,
+            eps_mu=args.eps_mu,
+            eps_logdet=args.eps_logdet,
+        )
     else:
-        reconstructor = RECONSTRUCTOR_REGISTRY[args.reconstructor](eps=args.eps)
+        if args.eps is None:
+            reconstructor = RECONSTRUCTOR_REGISTRY[args.reconstructor]()
+        else:
+            reconstructor = RECONSTRUCTOR_REGISTRY[args.reconstructor](eps=args.eps)
     
     # write sweep-level config
     config = {
@@ -148,7 +174,13 @@ def main():
     # run sweep
     for flip_p in flip_ps:
         for step in subsample_steps:
-            process = PROCESS_REGISTRY[args.process]()
+            if args.process == "continuous_file":
+                if args.data_path is None:
+                    raise ValueError("--data-path is required for --process continuous_file")
+                process = PROCESS_REGISTRY[args.process](path=args.data_path, column=args.data_column)
+            else:
+                process = PROCESS_REGISTRY[args.process]()
+                
             if flip_p > 0.0:
                 process = NoisyObservation(base=process, flip_p=flip_p)
             

@@ -123,7 +123,12 @@ def plot_heatmap(
         origin="lower",
         aspect="auto",
         interpolation="nearest",
-        extent=[min(ks) - 0.5, max(ks) + 0.5, min(flip_ps), max(flip_ps)],
+        extent=(
+            float(min(ks) - 0.5),
+            float(max(ks) + 0.5),
+            float(min(flip_ps)),
+            float(max(flip_ps)),
+        ),
     )
     plt.colorbar(im)
 

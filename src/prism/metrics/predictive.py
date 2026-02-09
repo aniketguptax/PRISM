@@ -1,11 +1,12 @@
 import math
-from typing import List
+from typing import Sequence
 
+from prism.processes.protocols import Obs
 from prism.reconstruction.protocols import PredictiveStateModel
 
 
 def log_loss(
-    x: List[int],
+    x: Sequence[Obs],
     rep,
     model: PredictiveStateModel,
     backoff_p: float = 0.5,
@@ -18,7 +19,7 @@ def log_loss(
         r = rep(x, t)
         s = model.rep_to_state.get(r)
         p1 = model.p_next_one[s] if s is not None else backoff_p
-        y = x[t + 1]
+        y = int(x[t + 1])
         p = p1 if y == 1 else (1.0 - p1)
         losses.append(-math.log(max(p, eps)))
 

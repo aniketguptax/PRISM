@@ -5,6 +5,7 @@ from .markov_order_1 import MarkovOrder1
 from .markov_order_2 import MarkovOrder2
 from .protocols import Process, Sample
 from .sns import SimpleNonUnifilarSource
+from .continuous_file import ContinuousFile
 
 __all__ = [
     "Process",
@@ -15,4 +16,5 @@ __all__ = [
     "MarkovOrder1",
     "MarkovOrder2",
     "SimpleNonUnifilarSource",
+    "ContinuousFile"
 ]
