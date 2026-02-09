@@ -1,3 +1,0 @@
-seed,process,representation,reconstructor,logloss,n_states,C_mu_empirical,unifilarity_score,branch_entropy
-2,even_process,last_5,one_step_greedy_merge,0.4045093573432008,4,1.316049696815247,0.9059268148370376,0.38317651221220217
-2,even_process,last_5,one_step_greedy_merge,0.4045093573432008,4,1.316049696815247,0.9059268148370376,0.38317651221220217

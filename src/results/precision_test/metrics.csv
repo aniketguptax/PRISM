@@ -1,4 +1,0 @@
-seed,process,representation,reconstructor,logloss,n_states,C_mu_empirical
-0,even_process,last_3,one_step_greedy_merge,0.42756336670761214,3,0.9380895763352264
-0,even_process,last_3,one_step_greedy_merge,0.42756336670761214,3,0.9380895763352264
-0,even_process,last_3,one_step_greedy_merge,0.42756336670761214,3,0.9380895763352264

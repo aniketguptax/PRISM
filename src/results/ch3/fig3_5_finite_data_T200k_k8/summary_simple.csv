@@ -1,2 +1,0 @@
-base_process,flip_p,subsample_step,k,logloss_mean,logloss_std,unifilarity_score_mean,unifilarity_score_std,branch_entropy_mean,branch_entropy_std
-even_process,0.0,1,8,0.38569590210246935,0.00042889019882781654,0.8337331474895462,0.030324139478857044,0.6078236486078662,0.060705653505774594
