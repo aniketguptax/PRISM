@@ -1,0 +1,6 @@
+seed,length,train_frac,process,base_process,eps,flip_p,subsample_step,wrappers,condition_id,representation,k,reconstructor,logloss,n_states,C_mu_empirical,unifilarity_score,branch_entropy
+0,20000,0.8,even_process,even_process,0.02,0.0,1,,flip0_sub1,last_10,10,one_step_greedy_merge,0.41666579201569487,22,1.9300806513417197,0.697479517168053,1.312960805331695
+1,20000,0.8,even_process,even_process,0.02,0.0,1,,flip0_sub1,last_10,10,one_step_greedy_merge,0.4782917114333025,19,1.9684130646261533,0.6936643942710613,1.2631117313394742
+2,20000,0.8,even_process,even_process,0.02,0.0,1,,flip0_sub1,last_10,10,one_step_greedy_merge,0.3938571945576183,20,2.017696054527226,0.6356870348364501,1.4006245212652468
+3,20000,0.8,even_process,even_process,0.02,0.0,1,,flip0_sub1,last_10,10,one_step_greedy_merge,0.42520571691061176,21,1.9375384170365988,0.6628932391018826,1.307879381511317
+4,20000,0.8,even_process,even_process,0.02,0.0,1,,flip0_sub1,last_10,10,one_step_greedy_merge,0.39391518249953533,23,1.9466226781879359,0.6677090499718557,1.2610896169720325

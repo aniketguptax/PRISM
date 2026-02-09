@@ -14,5 +14,5 @@ __all__ = [
     "IIDBernoulli",
     "MarkovOrder1",
     "MarkovOrder2",
-    "SimpleNonUnifilarSource"
+    "SimpleNonUnifilarSource",
 ]

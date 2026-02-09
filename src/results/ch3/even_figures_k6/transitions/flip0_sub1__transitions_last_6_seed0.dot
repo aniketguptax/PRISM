@@ -1,0 +1,34 @@
+digraph "even_process_last_6_seed0" {
+  rankdir=LR;
+  splines=true;
+  overlap=false;
+  concentrate=false;
+  outputorder=edgesfirst;
+  nodesep=0.9;
+  ranksep=1.1;
+  pad=0.25;
+  sep="+10,10";
+  esep="+10,10";
+  forcelabels=true;
+  graph [fontname="Helvetica", fontsize=18, fontcolor="#222222"];
+  node [shape=circle, fontname="Helvetica", fontsize=15, penwidth=1.8, color="#222222", fontcolor="#222222", margin=0.06, fixedsize=true, width=0.95, height=0.95];
+  edge [fontname="Helvetica", fontsize=12, arrowsize=1.25, penwidth=1.4, color="#222222", fontcolor="#222222", decorate=false, labelfloat=true];
+  label="even_process | last_6 | seed=0 | flip0_sub1";
+  labelloc=t;
+  labeljust=l;
+  0 [label="S0"];
+  1 [label="S1"];
+  2 [label="S2"];
+  3 [label="S3"];
+  0 -> 0 [minlen=2, label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>0</B>:</TD><TD ALIGN="LEFT">0.968</TD></TR></TABLE>>];
+  0 -> 1 [tailport=ne, headport=nw, minlen=3, weight=2, labeldistance=3.1, labelangle=36.0, label="", xlabel=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>0</B>:</TD><TD ALIGN="LEFT">0.030</TD></TR></TABLE>>];
+  0 -> 2 [tailport=ne, headport=nw, minlen=3, weight=2, labeldistance=3.1, labelangle=36.0, label="", xlabel=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>0</B>:</TD><TD ALIGN="LEFT">0.003</TD></TR></TABLE>>];
+  0 -> 3 [tailport=ne, headport=nw, minlen=3, weight=2, labeldistance=3.1, labelangle=36.0, label="", xlabel=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>1</B>:</TD><TD ALIGN="LEFT">1.000</TD></TR></TABLE>>];
+  1 -> 0 [tailport=se, headport=sw, minlen=3, weight=2, labeldistance=3.1, labelangle=-36.0, label="", xlabel=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>0</B>:</TD><TD ALIGN="LEFT">1.000</TD></TR></TABLE>>];
+  1 -> 3 [tailport=e, headport=w, minlen=3, weight=3, label="", xlabel=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>1</B>:</TD><TD ALIGN="LEFT">1.000</TD></TR></TABLE>>, labeldistance=2.6, labelangle=90];
+  2 -> 0 [tailport=se, headport=sw, minlen=3, weight=2, labeldistance=3.1, labelangle=-36.0, label="", xlabel=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>0</B>:</TD><TD ALIGN="LEFT">0.999</TD></TR></TABLE>>];
+  2 -> 2 [minlen=2, label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>0</B>:</TD><TD ALIGN="LEFT">0.001</TD></TR><TR><TD ALIGN="RIGHT"><B>1</B>:</TD><TD ALIGN="LEFT">0.999</TD></TR></TABLE>>];
+  2 -> 3 [tailport=ne, headport=nw, minlen=3, weight=2, labeldistance=3.1, labelangle=36.0, label="", xlabel=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>1</B>:</TD><TD ALIGN="LEFT">0.001</TD></TR></TABLE>>];
+  3 -> 0 [tailport=se, headport=sw, minlen=3, weight=2, labeldistance=3.1, labelangle=-36.0, label="", xlabel=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>1</B>:</TD><TD ALIGN="LEFT">0.777</TD></TR></TABLE>>];
+  3 -> 2 [tailport=se, headport=sw, minlen=3, weight=2, labeldistance=3.1, labelangle=-36.0, label="", xlabel=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="1" BGCOLOR="white"><TR><TD ALIGN="RIGHT"><B>1</B>:</TD><TD ALIGN="LEFT">0.223</TD></TR></TABLE>>];
+}

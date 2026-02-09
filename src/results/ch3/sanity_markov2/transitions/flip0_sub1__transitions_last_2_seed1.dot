@@ -1,0 +1,26 @@
+digraph "markov_order_2_last_2_seed1" {
+  rankdir=LR;
+  splines=true;
+  overlap=false;
+  nodesep=0.35;
+  ranksep=0.55;
+  pad=0.2;
+  graph [fontname="Helvetica", fontsize=14];
+  node [shape=circle, fontname="Helvetica", fontsize=12, penwidth=1.2];
+  edge [fontname="Helvetica", fontsize=11, arrowsize=0.75, penwidth=1.2, labelfloat=true, labeldistance=1.6, labelangle=25.0];
+  label="markov_order_2 | last_2 | seed=1 | flip0_sub1";
+  labelloc=t;
+  labeljust=l;
+  0 [label="0"];
+  1 [label="1"];
+  2 [label="2"];
+  3 [label="3"];
+  0 -> 0 [label="0: 1.000", penwidth=1.2, minlen=2];
+  0 -> 3 [label="1: 1.000", penwidth=1.2];
+  1 -> 1 [label="1: 1.000", penwidth=1.2, minlen=2];
+  1 -> 2 [label="0: 1.000", penwidth=1.2];
+  2 -> 0 [label="0: 1.000", penwidth=1.2];
+  2 -> 3 [label="1: 1.000", penwidth=1.2];
+  3 -> 1 [label="1: 1.000", penwidth=1.2];
+  3 -> 2 [label="0: 1.000", penwidth=1.2];
+}

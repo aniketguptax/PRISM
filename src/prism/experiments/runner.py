@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from prism.metrics import log_loss, statistical_complexity, n_states, unifilarity_score
 from prism.metrics.branching import mean_branching_entropy_weighted
 from prism.utils.io import save_csv, save_json
-from prism.metrics.graph import dot_to_png, to_edge_list, to_dot, save_dot
+from prism.metrics.graph import DotStyle, dot_to_png, to_edge_list, to_dot, save_dot
 from prism.processes.protocols import Process
 from prism.reconstruction.protocols import Reconstructor
 from prism.representations.protocols import Representation
@@ -113,11 +113,12 @@ def run_experiment(
                     save_json(json_path, edges)
                     dot = to_dot(
                         edges,
-                        f"{process.name}_{rep.name}_seed{seed}", 
-                        "TB", 
-                        f"{process.name} | {rep.name} | seed={seed} | {condition_id}",
-                        prob_precision=3,
+                        graph_name=f"{process.name}_{rep.name}_seed{seed}",
+                        label=f"{process.name} | {rep.name} | seed={seed} | {condition_id}",
+                        style=DotStyle(rankdir="LR"),
                     )
+
+
                     save_dot(dot_path, dot)
                     dot_to_png(dot_path, png_path)
 
