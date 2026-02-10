@@ -1,3 +1,5 @@
+"""Phase-diagram plots for closure metrics over `(flip_p, k)`."""
+
 import argparse
 import csv
 import math
@@ -21,35 +23,53 @@ class Row:
     condition_id: str
 
 
+def _safe_float(value: str) -> Optional[float]:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(out):
+        return None
+    return out
+
+
+def _safe_int(value: str) -> Optional[int]:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
 def read_rows(path: Path) -> List[Row]:
     rows: List[Row] = []
-    with path.open("r", encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        required = {
-            "flip_p",
-            "subsample_step",
-            "k",
-            "branch_entropy_mean",
-            "unifilarity_score_mean",
-        }
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"flip_p", "subsample_step", "k", "branch_entropy_mean", "unifilarity_score_mean"}
         missing = required - set(reader.fieldnames or [])
         if missing:
             raise ValueError(f"Missing columns in {path}: {sorted(missing)}")
-
-        for r in reader:
+        for raw in reader:
+            flip = _safe_float(raw.get("flip_p", ""))
+            step = _safe_int(raw.get("subsample_step", ""))
+            kval = _safe_int(raw.get("k", ""))
+            branch = _safe_float(raw.get("branch_entropy_mean", ""))
+            unif = _safe_float(raw.get("unifilarity_score_mean", ""))
+            if flip is None or step is None or kval is None or branch is None or unif is None:
+                continue
             rows.append(
                 Row(
-                    flip_p=float(r["flip_p"]),
-                    subsample_step=int(float(r["subsample_step"])),
-                    k=int(float(r["k"])),
-                    branch_mean=float(r["branch_entropy_mean"]),
-                    unif_mean=float(r["unifilarity_score_mean"]),
-                    base_process=r.get("base_process", ""),
-                    representation=r.get("representation", ""),
-                    condition_id=r.get("condition_id", ""),
+                    flip_p=flip,
+                    subsample_step=step,
+                    k=kval,
+                    branch_mean=branch,
+                    unif_mean=unif,
+                    base_process=raw.get("base_process", ""),
+                    representation=raw.get("representation", ""),
+                    condition_id=raw.get("condition_id", ""),
                 )
             )
     return rows
+
 
 def filter_rows(
     rows: List[Row],
@@ -58,33 +78,31 @@ def filter_rows(
     condition_id: Optional[str],
 ) -> List[Row]:
     out: List[Row] = []
-    for r in rows:
-        if base_process is not None and r.base_process != base_process:
+    for row in rows:
+        if base_process is not None and row.base_process != base_process:
             continue
-        if representation is not None and r.representation != representation:
+        if representation is not None and row.representation != representation:
             continue
-        if condition_id is not None and r.condition_id != condition_id:
+        if condition_id is not None and row.condition_id != condition_id:
             continue
-        out.append(r)
+        out.append(row)
     return out
 
+
 def build_grid(rows: List[Row]) -> Tuple[List[int], List[float], List[List[float]], List[List[float]]]:
-    ks = sorted(set(r.k for r in rows))
-    flip_ps = sorted(set(r.flip_p for r in rows))
-
-    k_index: Dict[int, int] = {k: i for i, k in enumerate(ks)}
-    f_index: Dict[float, int] = {fp: j for j, fp in enumerate(flip_ps)}
-
+    ks = sorted(set(row.k for row in rows))
+    flip_ps = sorted(set(row.flip_p for row in rows))
+    k_index: Dict[int, int] = {k: idx for idx, k in enumerate(ks)}
+    flip_index: Dict[float, int] = {flip: idx for idx, flip in enumerate(flip_ps)}
     branch_grid = [[math.nan for _ in ks] for _ in flip_ps]
     omu_grid = [[math.nan for _ in ks] for _ in flip_ps]
-
-    for r in rows:
-        j = f_index[r.flip_p]
-        i = k_index[r.k]
-        branch_grid[j][i] = r.branch_mean
-        omu_grid[j][i] = 1.0 - r.unif_mean
-
+    for row in rows:
+        j = flip_index[row.flip_p]
+        i = k_index[row.k]
+        branch_grid[j][i] = row.branch_mean
+        omu_grid[j][i] = 1.0 - row.unif_mean
     return ks, flip_ps, branch_grid, omu_grid
+
 
 def make_closed_mask(
     ks: List[int],
@@ -94,18 +112,17 @@ def make_closed_mask(
     unif_threshold: float,
     branch_threshold: float,
 ) -> List[List[bool]]:
-    # omu_grid = 1 - unif, so unif >= T  <=>  omu <= 1-T
-    omu_thresh = 1.0 - unif_threshold
+    omu_threshold = 1.0 - unif_threshold
     mask: List[List[bool]] = [[False for _ in ks] for _ in flip_ps]
-    
     for j in range(len(flip_ps)):
         for i in range(len(ks)):
-            b = branch_grid[j][i]
+            branch = branch_grid[j][i]
             omu = omu_grid[j][i]
-            if math.isnan(b) or math.isnan(omu):
+            if math.isnan(branch) or math.isnan(omu):
                 continue
-            mask[j][i] = (omu <= omu_thresh) and (b <= branch_threshold)
+            mask[j][i] = (omu <= omu_threshold) and (branch <= branch_threshold)
     return mask
+
 
 def plot_heatmap(
     ks: List[int],
@@ -115,36 +132,43 @@ def plot_heatmap(
     ylabel: str,
     outpath: Path,
     closed_mask: Optional[List[List[bool]]] = None,
-) -> None:
-    plt.figure(figsize=(6.2, 3.6))
+) -> bool:
+    finite_values = [value for row in grid for value in row if not math.isnan(value)]
+    if not finite_values:
+        print(f"Skipping {title}: all values are NaN.")
+        return False
 
+    plt.figure(figsize=(6.2, 3.6))
+    x_min = float(min(ks) - 0.5)
+    x_max = float(max(ks) + 0.5)
+    y_min = float(min(flip_ps))
+    y_max = float(max(flip_ps))
+    if x_min == x_max:
+        x_min -= 0.5
+        x_max += 0.5
+    if y_min == y_max:
+        y_min -= 0.01
+        y_max += 0.01
     im = plt.imshow(
         grid,
         origin="lower",
         aspect="auto",
         interpolation="nearest",
-        extent=(
-            float(min(ks) - 0.5),
-            float(max(ks) + 0.5),
-            float(min(flip_ps)),
-            float(max(flip_ps)),
-        ),
+        extent=(x_min, x_max, y_min, y_max),
     )
     plt.colorbar(im)
-
-    plt.xlabel("Representation length $k$")
+    plt.xlabel("Representation size")
     plt.ylabel(ylabel)
     plt.title(title)
 
-    # Overlay closure mask as points (centres)
     if closed_mask is not None:
         xs: List[float] = []
         ys: List[float] = []
-        for j, fp in enumerate(flip_ps):
+        for j, flip in enumerate(flip_ps):
             for i, k in enumerate(ks):
                 if closed_mask[j][i]:
                     xs.append(k)
-                    ys.append(fp)
+                    ys.append(flip)
         if xs:
             plt.scatter(
                 xs,
@@ -161,55 +185,47 @@ def plot_heatmap(
     plt.savefig(outpath)
     plt.close()
     print(f"Wrote {outpath}")
-
+    return True
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, required=True, help="Root directory containing results and figures")
-    parser.add_argument("--infile", type=str, default="summary_by_condition.csv", help="Input CSV file name")
-    parser.add_argument("--unif-threshold", type=float, default=0.98, help="Unifilarity threshold")
-    parser.add_argument("--branch-threshold", type=float, default=0.02, help="Branching entropy threshold (bits)")
-    parser.add_argument("--process-name", type=str, default=None, help="Name of the process (for plot titles)")
-    
-    parser.add_argument("--ylabel", type=str, default="flip probability $p$", help="Y-axis label for plots")
-    parser.add_argument("--metric", choices=["branch", "omu", "both"], default="both", help="Which metric(s) to plot")
-    
-    # fiter options
-    parser.add_argument("--base-process", type=str, default=None, help="Name of the base process to filter")
-    parser.add_argument("--representation", type=str, default=None, help="Name of the representation to filter")
-    parser.add_argument("--condition-id", type=str, default=None, help="Condition ID to filter")
-    
+    parser.add_argument("--root", type=Path, required=True, help="Root directory containing summary_by_condition.csv")
+    parser.add_argument("--infile", type=str, default="summary_by_condition.csv")
+    parser.add_argument("--unif-threshold", type=float, default=0.98)
+    parser.add_argument("--branch-threshold", type=float, default=0.02)
+    parser.add_argument("--process-name", type=str, default=None)
+    parser.add_argument("--ylabel", type=str, default="flip probability $p$")
+    parser.add_argument("--metric", choices=["branch", "omu", "both"], default="both")
+    parser.add_argument("--base-process", type=str, default=None)
+    parser.add_argument("--representation", type=str, default=None)
+    parser.add_argument("--condition-id", type=str, default=None)
     args = parser.parse_args()
 
     summary_csv = args.root / args.infile
     if not summary_csv.exists():
         raise FileNotFoundError(f"Missing {summary_csv}")
 
-    all_rows = read_rows(summary_csv)
-    all_rows = filter_rows(
-        all_rows,
+    rows = filter_rows(
+        read_rows(summary_csv),
         base_process=args.base_process,
         representation=args.representation,
         condition_id=args.condition_id,
     )
+    if not rows:
+        print("No finite branch/unifilarity rows after filtering; skipping phase diagram.")
+        return
 
-    # group by subsample step
-    steps = sorted(set(r.subsample_step for r in all_rows))
+    steps = sorted(set(row.subsample_step for row in rows))
     figs_dir = args.root / "figures"
     figs_dir.mkdir(parents=True, exist_ok=True)
-
-    # Use process name in titles if provided, else leave generic
     process_prefix = f"{args.process_name}: " if args.process_name else ""
 
     for step in steps:
-        rows = [r for r in all_rows if r.subsample_step == step]
-        if not rows:
-            print(f"No data for subsample step {step}, skipping.")
+        step_rows = [row for row in rows if row.subsample_step == step]
+        if not step_rows:
             continue
-        
-        ks, flip_ps, branch_grid, omu_grid = build_grid(rows)
-
+        ks, flip_ps, branch_grid, omu_grid = build_grid(step_rows)
         closed_mask = make_closed_mask(
             ks=ks,
             flip_ps=flip_ps,
@@ -218,7 +234,6 @@ def main() -> None:
             unif_threshold=args.unif_threshold,
             branch_threshold=args.branch_threshold,
         )
-        
         if args.metric in ("branch", "both"):
             plot_heatmap(
                 ks,
@@ -229,7 +244,6 @@ def main() -> None:
                 outpath=figs_dir / f"phase_branch_entropy_sub{step}.pdf",
                 closed_mask=closed_mask,
             )
-        
         if args.metric in ("omu", "both"):
             plot_heatmap(
                 ks,

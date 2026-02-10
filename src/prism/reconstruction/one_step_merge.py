@@ -1,8 +1,8 @@
-from dataclasses import dataclass
 from collections import Counter, defaultdict
-from typing import Dict, Hashable, List, Sequence, Tuple
+from typing import Dict, Hashable, Sequence, Tuple
 
-from prism.processes.protocols import Obs
+from prism.representations.protocols import Representation
+from prism.types import Obs
 
 from .protocols import PredictiveStateModel, Reconstructor
 
@@ -10,8 +10,7 @@ from .protocols import PredictiveStateModel, Reconstructor
 Rep = Hashable
 
 
-@dataclass
-class OneStepGreedyMerge(Reconstructor):
+class OneStepGreedyMerge(Reconstructor[PredictiveStateModel]):
     def __init__(self, eps: float = 0.02):
         self.eps = eps
     
@@ -19,9 +18,9 @@ class OneStepGreedyMerge(Reconstructor):
     def name(self) -> str:
         return "one_step_greedy_merge"
 
-    def fit(self, x_train: Sequence[Obs], rep, seed: int = 0) -> PredictiveStateModel:
+    def fit(self, x_train: Sequence[Obs], rep: Representation, seed: int = 0) -> PredictiveStateModel:
         # Ensure discrete binary ints
-        x_train_int: List[int] = []
+        x_train_int: list[int] = []
         for i, v in enumerate(x_train):
             if not isinstance(v, int):
                 raise TypeError(
@@ -41,7 +40,7 @@ class OneStepGreedyMerge(Reconstructor):
             y = x_train[t + 1]
             next_counts[r][y] += 1
 
-        stats: List[Tuple[Rep, float, int]] = []
+        stats: list[Tuple[Rep, float, int]] = []
         for r, cnt in next_counts.items():
             total = cnt[0] + cnt[1]
             if total == 0:
@@ -54,7 +53,7 @@ class OneStepGreedyMerge(Reconstructor):
         p_next_one: Dict[int, float] = {}
 
         state = 0
-        bin_items: List[Tuple[Rep, float, int]] = []
+        bin_items: list[Tuple[Rep, float, int]] = []
         anchor = None
 
         def flush():
@@ -83,7 +82,7 @@ class OneStepGreedyMerge(Reconstructor):
         flush()
 
         # Build state sequence and transition counts
-        state_seq: List[int] = []
+        state_seq: list[int] = []
         trans_counts: Dict[Tuple[int, int], Counter] = defaultdict(Counter)
 
         # For transitions, we need s_t and s_{t+1}, conditioned on observed sym = x_{t+1}

@@ -1,4 +1,4 @@
-from prism.representations.continuous import ISSDim
+from .continuous import ISSDim
 from .discrete import LastK, LastKWithNoise
 from .protocols import Representation
 
@@ -7,4 +7,4 @@ __all__ = [
     "LastK",
     "LastKWithNoise",
     "ISSDim",
-    ]
+]
