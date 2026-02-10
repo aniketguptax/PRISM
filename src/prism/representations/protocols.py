@@ -1,7 +1,9 @@
-from typing import Hashable, Protocol, Sequence, Union
+from typing import Hashable, Protocol, Sequence
 
-Obs = Union[int, float]
+from prism.types import Obs
+
 Rep = Hashable
+
 
 class Representation(Protocol):
     @property

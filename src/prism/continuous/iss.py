@@ -1,24 +1,39 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Tuple
 
 import numpy as np
 
 Array = np.ndarray
 
+
 def _sym(A: Array) -> Array:
     return 0.5 * (A + A.T)
+
+
+def _ensure_spd(S: Array, *, ridge: float = 1e-9, max_tries: int = 8) -> Array:
+    """Return a symmetric positive-definite matrix by adding adaptive jitter."""
+    S_sym = _sym(S)
+    eye = np.eye(S_sym.shape[0], dtype=float)
+    jitter = float(max(ridge, 0.0))
+    for _ in range(max_tries):
+        try:
+            np.linalg.cholesky(S_sym + jitter * eye)
+            return S_sym + jitter * eye
+        except np.linalg.LinAlgError:
+            jitter = 10.0 * jitter if jitter > 0.0 else 1e-12
+    raise np.linalg.LinAlgError("Failed to make covariance matrix positive definite.")
+
 
 def _chol_inv(S: Array) -> Tuple[Array, float]:
     """
     Returns inv(S) and logdet(S) robustly via Cholesky.
-    Assumes S SPD.
     """
-    L = np.linalg.cholesky(S)
+    S_spd = _ensure_spd(S)
+    L = np.linalg.cholesky(S_spd)
     logdet = 2.0 * np.sum(np.log(np.diag(L)))
-    # inv via solve
-    inv = np.linalg.solve(L.T, np.linalg.solve(L, np.eye(S.shape[0])))
+    inv = np.linalg.solve(L.T, np.linalg.solve(L, np.eye(S_spd.shape[0])))
     return inv, float(logdet)
 
 def _gaussian_nll(x: Array, mean: Array, cov: Array) -> float:
@@ -27,11 +42,11 @@ def _gaussian_nll(x: Array, mean: Array, cov: Array) -> float:
     """
     x = x.reshape(-1, 1)
     mean = mean.reshape(-1, 1)
-    cov = _sym(cov)
+    cov = _ensure_spd(cov)
     inv, logdet = _chol_inv(cov)
     d = x.shape[0]
     diff = x - mean
-    quad = float(diff.T @ inv @ diff)
+    quad = float((diff.T @ inv @ diff).item())
     return 0.5 * (d * np.log(2.0 * np.pi) + logdet + quad)
 
 @dataclass
@@ -89,7 +104,7 @@ def _init_params(y: Array, d: int, ridge: float, seed: int, init_state_cov: floa
     # C init
     if T >= d and p >= 1:
         # PCA via SVD on y0
-        U, S, Vt = np.linalg.svd(y0, full_matrices=False)
+        _, _, Vt = np.linalg.svd(y0, full_matrices=False)
         # Vt: (p,p), take top-d directions
         V = Vt.T[:, :d] if Vt.shape[0] >= d else rng.normal(scale=0.1, size=(p, d))
         C = V
@@ -104,9 +119,9 @@ def _init_params(y: Array, d: int, ridge: float, seed: int, init_state_cov: floa
     V0 = np.eye(d) * float(init_state_cov)
 
     # ridge stabilisation
-    Q = _sym(Q) + ridge * np.eye(d)
-    R = _sym(R) + ridge * np.eye(p)
-    V0 = _sym(V0) + ridge * np.eye(d)
+    Q = _ensure_spd(Q, ridge=ridge)
+    R = _ensure_spd(R, ridge=ridge)
+    V0 = _ensure_spd(V0, ridge=ridge)
 
     return KalmanISSModel(A=A, C=C, Q=Q, R=R, mu0=mu0, V0=V0)
 
@@ -121,8 +136,8 @@ def kalman_filter(y: Array, m: KalmanISSModel) -> Tuple[Array, Array, Array, Arr
       P_pred[t]   = Cov[z_t | y_0:t-1]
       ll          = log-likelihood of y under model
     """
-    A, C, Q, R = m.A, m.C, _sym(m.Q), _sym(m.R)
-    mu0, V0 = m.mu0, _sym(m.V0)
+    A, C, Q, R = m.A, m.C, _ensure_spd(m.Q), _ensure_spd(m.R)
+    mu0, V0 = m.mu0, _ensure_spd(m.V0)
 
     T, p = y.shape
     d = A.shape[0]
@@ -143,8 +158,7 @@ def kalman_filter(y: Array, m: KalmanISSModel) -> Tuple[Array, Array, Array, Arr
     for t in range(T):
         # Predict observation
         y_mean = C @ mu_pr[t]             # (p,1)
-        S = C @ P_pr[t] @ C.T + R         # (p,p)
-        S = _sym(S)
+        S = _ensure_spd(C @ P_pr[t] @ C.T + R)
 
         # Update
         invS, logdetS = _chol_inv(S)
@@ -152,16 +166,16 @@ def kalman_filter(y: Array, m: KalmanISSModel) -> Tuple[Array, Array, Array, Arr
         innov = y[t].reshape(p, 1) - y_mean
 
         mu_f[t] = mu_pr[t] + K @ innov
-        P_f[t] = _sym((I - K @ C) @ P_pr[t])
+        P_f[t] = _ensure_spd((I - K @ C) @ P_pr[t] @ (I - K @ C).T + K @ R @ K.T)
 
         # log-likelihood increment
-        quad = float(innov.T @ invS @ innov)
+        quad = float((innov.T @ invS @ innov).item())
         ll += -0.5 * (p * np.log(2.0 * np.pi) + logdetS + quad)
 
         # next predict
         if t + 1 < T:
             mu_pr[t + 1] = A @ mu_f[t]
-            P_pr[t + 1] = _sym(A @ P_f[t] @ A.T + Q)
+            P_pr[t + 1] = _ensure_spd(A @ P_f[t] @ A.T + Q)
 
     return mu_f, P_f, mu_pr, P_pr, float(ll)
 
@@ -174,7 +188,7 @@ def rts_smoother(m: KalmanISSModel, mu_f: Array, P_f: Array, mu_pr: Array, P_pr:
       P_s[t]  = Cov[z_t | y_0:T-1]
       P_cs[t] = Cov[z_t, z_{t-1} | y] for t>=1, shape (T,d,d), P_cs[0]=0
     """
-    A, Q = m.A, _sym(m.Q)
+    A = m.A
 
     T, d, _ = mu_f.shape
     mu_s = mu_f.copy()
@@ -182,12 +196,11 @@ def rts_smoother(m: KalmanISSModel, mu_f: Array, P_f: Array, mu_pr: Array, P_pr:
     P_cs = np.zeros((T, d, d))
 
     for t in range(T - 2, -1, -1):
-        Ppr = _sym(P_pr[t + 1])
-        invPpr = np.linalg.solve(Ppr, np.eye(d))
-        J = P_f[t] @ A.T @ invPpr  # smoother gain
+        Ppr = _ensure_spd(P_pr[t + 1])
+        J = P_f[t] @ A.T @ np.linalg.solve(Ppr, np.eye(d))  # smoother gain
 
         mu_s[t] = mu_f[t] + J @ (mu_s[t + 1] - mu_pr[t + 1])
-        P_s[t] = _sym(P_f[t] + J @ (P_s[t + 1] - Ppr) @ J.T)
+        P_s[t] = _ensure_spd(P_f[t] + J @ (P_s[t + 1] - Ppr) @ J.T)
 
         # Cross-covariance (t+1,t)
         P_cs[t + 1] = _sym(P_s[t + 1] @ J.T)
@@ -240,14 +253,14 @@ def fit_kalman_iss_em(y: Array, cfg: KalmanISSConfig) -> KalmanISSModel:
         sum_Ezzm1 = np.sum(Ezzm1[1:], axis=0)    # t=1..T-1 cross
 
         # Regularise inversion
-        sum_Ezz_prev_reg = _sym(sum_Ezz_prev) + cfg.ridge * np.eye(d)
-        A_new = sum_Ezzm1 @ np.linalg.inv(sum_Ezz_prev_reg)
+        sum_Ezz_prev_reg = _ensure_spd(sum_Ezz_prev, ridge=cfg.ridge)
+        A_new = np.linalg.solve(sum_Ezz_prev_reg.T, sum_Ezzm1.T).T
 
         # Q = (1/(T-1)) * sum E[(z_{t} - A z_{t-1})(...)]
         Q_num = np.zeros((d, d))
         for t in range(1, T):
             Q_num += Ezz[t] - A_new @ Ezzm1[t].T - Ezzm1[t] @ A_new.T + A_new @ Ezz[t - 1] @ A_new.T
-        Q_new = _sym(Q_num / max(T - 1, 1) + cfg.ridge * np.eye(d))
+        Q_new = _ensure_spd(Q_num / max(T - 1, 1), ridge=cfg.ridge)
 
         # Update C, R
         # C = (sum y_t E[z_t]^T) (sum E[z_t z_t^T])^{-1}
@@ -256,19 +269,19 @@ def fit_kalman_iss_em(y: Array, cfg: KalmanISSConfig) -> KalmanISSModel:
             sum_yz += y[t].reshape(p, 1) @ Ez[t].T
 
         sum_Ezz_all = np.sum(Ezz, axis=0)
-        sum_Ezz_all_reg = _sym(sum_Ezz_all) + cfg.ridge * np.eye(d)
-        C_new = sum_yz @ np.linalg.inv(sum_Ezz_all_reg)
+        sum_Ezz_all_reg = _ensure_spd(sum_Ezz_all, ridge=cfg.ridge)
+        C_new = np.linalg.solve(sum_Ezz_all_reg.T, sum_yz.T).T
 
         # R = (1/T) sum E[(y_t - C z_t)(...)]
         R_num = np.zeros((p, p))
         for t in range(T):
             yt = y[t].reshape(p, 1)
             R_num += yt @ yt.T - C_new @ Ez[t] @ yt.T - yt @ Ez[t].T @ C_new.T + C_new @ Ezz[t] @ C_new.T
-        R_new = _sym(R_num / max(T, 1) + cfg.ridge * np.eye(p))
+        R_new = _ensure_spd(R_num / max(T, 1), ridge=cfg.ridge)
 
         # Initial state
         mu0_new = Ez[0].copy()
-        V0_new = _sym(P_s[0] + cfg.ridge * np.eye(d))
+        V0_new = _ensure_spd(P_s[0], ridge=cfg.ridge)
 
         model = KalmanISSModel(
             A=A_new,
@@ -305,11 +318,11 @@ def one_step_predictive_y(y: Array, model: KalmanISSModel) -> Tuple[Array, Array
     S_y = np.zeros((T, p, p))
     innov = np.zeros((T, p, 1))
 
-    C, R = model.C, _sym(model.R)
+    C, R = model.C, _ensure_spd(model.R)
 
     for t in range(T):
         mu_y[t] = C @ mu_pr[t]
-        S_y[t] = _sym(C @ P_pr[t] @ C.T + R)
+        S_y[t] = _ensure_spd(C @ P_pr[t] @ C.T + R)
         innov[t] = y[t].reshape(p, 1) - mu_y[t]
 
     return mu_y, S_y, innov

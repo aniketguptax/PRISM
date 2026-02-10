@@ -6,6 +6,7 @@ from .markov_order_2 import MarkovOrder2
 from .protocols import Process, Sample
 from .sns import SimpleNonUnifilarSource
 from .continuous_file import ContinuousFile
+from .linear_gaussian_ssm import LinearGaussianSSM
 
 __all__ = [
     "Process",
@@ -16,5 +17,6 @@ __all__ = [
     "MarkovOrder1",
     "MarkovOrder2",
     "SimpleNonUnifilarSource",
-    "ContinuousFile"
+    "ContinuousFile",
+    "LinearGaussianSSM",
 ]
