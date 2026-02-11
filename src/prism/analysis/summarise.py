@@ -54,6 +54,7 @@ def summarise(run_root: Path) -> None:
         "flip_p",
         "subsample_step",
         "reconstructor",
+        "projection_mode",
         "representation",
         "k",
         "dv",
@@ -69,6 +70,7 @@ def summarise(run_root: Path) -> None:
         rows = list(reader)
         for row in rows:
             row.setdefault("dv", "")
+            row.setdefault("projection_mode", "")
 
     metrics = [metric for metric in DEFAULT_METRICS if metric in rows[0]] if rows else []
     groups: Dict[Tuple[Any, ...], List[Dict[str, str]]] = defaultdict(list)
@@ -113,6 +115,7 @@ def summarise(run_root: Path) -> None:
 
     simple_cols = [
         "base_process",
+        "projection_mode",
         "flip_p",
         "subsample_step",
         "k",

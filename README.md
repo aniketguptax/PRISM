@@ -130,6 +130,12 @@ cd src
 python -m prism.analysis.summarise --root ../results/even_k_sweep
 python -m prism.analysis.plot_k --root ../results/even_k_sweep --metrics logloss n_states unifilarity_score branch_entropy
 python -m prism.analysis.phase_diagram --root ../results/even_k_sweep
+
+# Continuous-only analysis (ISS sweeps)
+python -m prism.analysis.summarise --root ../results/continuous_iss_sweep
+python -m prism.analysis.plot_k --root ../results/continuous_iss_sweep --dv 1 --metrics gaussian_logloss n_states C_mu_empirical psi_opt
+python -m prism.analysis.continuous_heatmaps --root ../results/continuous_iss_sweep --shared-scale
+python -m prism.analysis.compare_projection_modes --root ../results/continuous_iss_sweep --metrics gaussian_logloss n_states C_mu_empirical psi_opt
 ```
 
 ## Smoke commands
