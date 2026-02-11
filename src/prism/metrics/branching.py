@@ -1,10 +1,8 @@
 import math
-from typing import Dict, Tuple
-
-from prism.reconstruction.protocols import PredictiveStateModel
+from prism.reconstruction.protocols import TransitionModel
 
 
-def mean_branching_entropy(model: PredictiveStateModel, log_base: float = math.e) -> float:
+def mean_branching_entropy(model: TransitionModel, log_base: float = math.e) -> float:
     """
     Mean conditional entropy of next-state distribution per (state, symbol):
 
@@ -35,7 +33,7 @@ def mean_branching_entropy(model: PredictiveStateModel, log_base: float = math.e
     return sum(entropies) / (len(entropies) or 1)
 
 
-def mean_branching_entropy_weighted(model: PredictiveStateModel, log_base: float = math.e) -> float:
+def mean_branching_entropy_weighted(model: TransitionModel, log_base: float = math.e) -> float:
     if not model.transitions:
         return 0.0
 

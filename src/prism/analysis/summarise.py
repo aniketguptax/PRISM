@@ -1,5 +1,3 @@
-"""Aggregate per-seed PRISM run metrics into summary tables."""
-
 import argparse
 import csv
 import math
@@ -14,6 +12,8 @@ DEFAULT_METRICS = [
     "C_mu_empirical",
     "unifilarity_score",
     "branch_entropy",
+    "psi_opt",
+    "psi_macro_dim",
 ]
 
 
@@ -48,16 +48,27 @@ def summarise(run_root: Path) -> None:
     if not runs_path.exists():
         raise FileNotFoundError(f"Missing {runs_path}")
 
-    key_cols = ["base_process", "condition_id", "flip_p", "subsample_step", "reconstructor", "representation", "k"]
+    key_cols = [
+        "base_process",
+        "condition_id",
+        "flip_p",
+        "subsample_step",
+        "reconstructor",
+        "representation",
+        "k",
+        "dv",
+    ]
     with runs_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
             raise ValueError(f"{runs_path} has no header row.")
-        required_columns = {"seed"} | set(key_cols)
+        required_columns = {"seed", "base_process", "condition_id", "flip_p", "subsample_step", "reconstructor", "representation", "k"}
         missing_keys = required_columns - set(reader.fieldnames)
         if missing_keys:
             raise ValueError(f"Missing required columns in {runs_path}: {sorted(missing_keys)}")
         rows = list(reader)
+        for row in rows:
+            row.setdefault("dv", "")
 
     metrics = [metric for metric in DEFAULT_METRICS if metric in rows[0]] if rows else []
     groups: Dict[Tuple[Any, ...], List[Dict[str, str]]] = defaultdict(list)
@@ -76,14 +87,16 @@ def summarise(run_root: Path) -> None:
             out[f"{metric}_std"] = _std(finite_values)
         summary_rows.append(out)
 
-    def _key_sort(row: dict[str, Any]) -> Tuple[float, int, int]:
+    def _key_sort(row: dict[str, Any]) -> Tuple[float, int, int, int]:
         flip = _safe_float(str(row.get("flip_p", "0")))
         step = _safe_float(str(row.get("subsample_step", "1")))
         kval = _safe_float(str(row.get("k", "0")))
+        dv = _safe_float(str(row.get("dv", "1")))
         return (
             0.0 if flip is None else flip,
             1 if step is None else int(step),
             0 if kval is None else int(kval),
+            1 if dv is None else int(dv),
         )
 
     summary_rows.sort(key=_key_sort)
@@ -103,14 +116,21 @@ def summarise(run_root: Path) -> None:
         "flip_p",
         "subsample_step",
         "k",
+        "dv",
         "logloss_mean",
         "logloss_std",
         "gaussian_logloss_mean",
         "gaussian_logloss_std",
+        "n_states_mean",
+        "n_states_std",
+        "C_mu_empirical_mean",
+        "C_mu_empirical_std",
         "unifilarity_score_mean",
         "unifilarity_score_std",
         "branch_entropy_mean",
         "branch_entropy_std",
+        "psi_opt_mean",
+        "psi_opt_std",
     ]
     simple_path = run_root / "summary_simple.csv"
     with simple_path.open("w", newline="", encoding="utf-8") as handle:

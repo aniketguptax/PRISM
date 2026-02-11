@@ -1,6 +1,6 @@
 import math
 
-from prism.metrics import log_loss
+from prism.metrics.predictive import log_loss_with_context
 from prism.processes import IIDBernoulli
 from prism.reconstruction import OneStepGreedyMerge
 from prism.representations import LastK
@@ -17,8 +17,8 @@ def test_logloss_finite_and_reasonable():
     x_train, x_test = x[:split], x[split:]
 
     model = recon.fit(x_train, rep, seed=0)
-    ll = log_loss(x_test, rep, model)
+    ll = log_loss_with_context(x_train, x_test, rep, model)
 
     assert math.isfinite(ll)
-    # For fair coin, cross-entropy should be close to ln(2) ~ 0.693 (this is just sanity)
+    # For fair coin, cross-entropy should be close to ln(2) ~0.693 (this is just sanity)
     assert 0.4 < ll < 1.2

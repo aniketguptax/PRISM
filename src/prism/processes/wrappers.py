@@ -6,10 +6,7 @@ from .protocols import Process, Sample, Obs
 
 
 def _ensure_binary_ints(x: Sequence[Obs], *, name: str) -> List[int]:
-    """
-    Ensure observations are ints in {0,1}. Raise a helpful error otherwise.
-    Returns a concrete List[int] for downstream wrappers.
-    """
+    """Ensure observations are ints in {0,1}"""
     out: List[int] = []
     for i, v in enumerate(x):
         if isinstance(v, bool):
@@ -66,8 +63,19 @@ class Subsample(Process):
             raise ValueError("step must be >= 1")
 
     def sample(self, length: int, seed: int) -> Sample:
-        s = self.base.sample(length=length, seed=seed)
-        
-        x = s.x[:: self.step]
-        latent = s.latent[:: self.step] if s.latent is not None else None
+        if length < 1:
+            raise ValueError(f"length must be >= 1, got {length}.")
+
+        base_length = length * self.step
+        s = self.base.sample(length=base_length, seed=seed)
+
+        x = list(s.x[:: self.step])[:length]
+        if len(x) != length:
+            raise ValueError(
+                f"Subsample(base={self.base.name}, step={self.step}) expected {length} samples, "
+                f"got {len(x)} from base length {base_length}."
+            )
+        latent = None
+        if s.latent is not None:
+            latent = list(s.latent[:: self.step])[:length]
         return Sample(x=x, latent=latent)
