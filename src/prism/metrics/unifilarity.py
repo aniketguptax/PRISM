@@ -1,10 +1,7 @@
-import math
-from typing import Dict, Tuple
-
-from prism.reconstruction.protocols import PredictiveStateModel
+from prism.reconstruction.protocols import TransitionModel
 
 
-def unifilarity_score(model: PredictiveStateModel) -> float:
+def unifilarity_score(model: TransitionModel) -> float:
     """
     Unifilarity score: weighted mean of local unifilarities per (state, symbol), where weights
     are proportional to empirical visitation counts of (state, symbol) pairs in training data.

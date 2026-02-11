@@ -1,7 +1,7 @@
 import math
 
 from prism.metrics.branching import mean_branching_entropy_weighted
-from prism.metrics.predictive import log_loss
+from prism.metrics.predictive import log_loss_with_context
 from prism.metrics.unifilarity import unifilarity_score
 from prism.processes.iid import IIDBernoulli
 from prism.processes.markov_order_1 import MarkovOrder1
@@ -15,7 +15,7 @@ def _fit_and_score(process, seed: int = 0) -> tuple[float, float, float]:
     sample = process.sample(length=40_000, seed=seed)
     split = int(0.8 * len(sample.x))
     model = recon.fit(sample.x[:split], rep, seed=seed)
-    ll = log_loss(sample.x[split:], rep, model)
+    ll = log_loss_with_context(sample.x[:split], sample.x[split:], rep, model)
     unif = unifilarity_score(model)
     branch = mean_branching_entropy_weighted(model, log_base=2.0)
     return ll, unif, branch

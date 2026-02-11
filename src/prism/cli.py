@@ -1,8 +1,7 @@
-"""Command-line entry point for PRISM experiments."""
-
 import argparse
 import json
 from datetime import datetime
+from itertools import product
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -74,6 +73,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--reconstructor", default="one_step", choices=RECONSTRUCTOR_REGISTRY.keys())
 
     parser.add_argument("--ks", nargs="+", type=int, required=True, help="k values (discrete) or d values (ISS)")
+    parser.add_argument("--dvs", nargs="+", type=int, default=[1], help="Macro projection dimensions d_V (continuous ISS).")
     parser.add_argument("--length", type=int, default=400_000)
     parser.add_argument("--train-frac", type=float, default=0.8)
     parser.add_argument("--seeds", nargs="+", type=int, default=[0], help="Random seeds.")
@@ -81,16 +81,74 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--eps", type=float, default=0.02, help="Epsilon for one-step merge.")
     parser.add_argument("--em-iters", type=int, default=50, help="EM iterations for Kalman ISS.")
     parser.add_argument("--em-tol", type=float, default=1e-4, help="EM convergence tolerance.")
-    parser.add_argument("--em-ridge", type=float, default=1e-6, help="Ridge stabilizer for ISS EM.")
+    parser.add_argument("--em-ridge", type=float, default=1e-6, help="Ridge stabiliser for ISS EM.")
+    parser.add_argument("--macro-eps", type=float, default=0.25, help="Tolerance for continuous macrostate reconstruction.")
+    parser.add_argument("--macro-bins", type=int, default=3, help="Quantile bins per macro dimension for transition symbols.")
+    parser.add_argument(
+        "--macro-symboliser",
+        type=str,
+        choices=["quantile"],
+        default="quantile",
+        help="Discretiser used to turn macro projections into transition symbols.",
+    )
+    parser.add_argument(
+        "--macro-projection",
+        type=str,
+        choices=["pca", "random", "psi_opt"],
+        default="pca",
+        help="Projection family used for V_t = L X_t in continuous runs.",
+    )
+    parser.add_argument(
+        "--iss-mode",
+        type=str,
+        choices=["steady_state", "time_varying"],
+        default="steady_state",
+        help="Filtering mode used for ISS predictions.",
+    )
+    parser.add_argument(
+        "--allow-time-varying-fallback",
+        action="store_true",
+        help="If steady-state DARE fails, fall back to time-varying Kalman gains.",
+    )
+    parser.add_argument("--steady-state-tol", type=float, default=1e-9, help="Steady-state Riccati convergence tolerance.")
+    parser.add_argument("--steady-state-max-iter", type=int, default=10_000, help="Max iterations for steady-state Riccati solver.")
+    parser.add_argument("--steady-state-ridge", type=float, default=1e-9, help="Ridge stabiliser for steady-state Riccati solver.")
+    parser.add_argument("--compute-psi", action="store_true", help="Optimise ISS Psi over coarse-graining L.")
+    parser.add_argument(
+        "--psi-optimiser",
+        dest="psi_optimiser",
+        type=str,
+        choices=["random", "torch_adam"],
+        default="random",
+        help="Optimiser used for Psi coarse-graining.",
+    )
+    parser.add_argument(
+        "--psi-optimizer",
+        dest="psi_optimiser",
+        type=str,
+        choices=["random", "torch_adam"],
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--psi-restarts", type=int, default=12, help="Number of restarts for Psi optimisation.")
+    parser.add_argument("--psi-iters", type=int, default=120, help="Iterations per restart for Psi optimisation.")
+    parser.add_argument("--psi-lr", type=float, default=0.03, help="Learning rate for torch Adam Psi optimisation.")
+    parser.add_argument("--psi-step-scale", type=float, default=0.2, help="Step scale for random Psi search.")
+    parser.add_argument("--psi-tol", type=float, default=1e-8, help="Tolerance used in Psi solvers.")
+    parser.add_argument("--psi-max-iter", type=int, default=4000, help="Max Riccati/Lyapunov iterations for Psi.")
+    parser.add_argument("--psi-ridge", type=float, default=1e-8, help="Covariance ridge for Psi computations.")
 
     parser.add_argument("--data-path", type=Path, default=None, help="Path to .npy/.csv/.txt time series.")
     parser.add_argument("--data-column", type=int, default=None, help="Column index for multi-column files.")
+    parser.add_argument("--data-columns", nargs="+", type=int, default=None, help="Column indices for multi-column files.")
 
     parser.add_argument("--lgssm-a", type=float, default=0.92, help="AR coefficient for linear_gaussian_ssm.")
     parser.add_argument("--lgssm-c", type=float, default=1.0, help="Observation loading for linear_gaussian_ssm.")
     parser.add_argument("--lgssm-process-std", type=float, default=0.35, help="Process noise std.")
     parser.add_argument("--lgssm-obs-std", type=float, default=0.25, help="Observation noise std.")
     parser.add_argument("--lgssm-init-std", type=float, default=1.0, help="Initial latent std.")
+    parser.add_argument("--lgssm-latent-dim", type=int, default=2, help="Latent state dimension for linear_gaussian_ssm.")
+    parser.add_argument("--lgssm-obs-dim", type=int, default=3, help="Observation dimension p for linear_gaussian_ssm.")
+    parser.add_argument("--lgssm-coupling-std", type=float, default=0.08, help="Off-diagonal coupling scale in latent dynamics.")
 
     parser.add_argument("--noisy", action="store_true", help="Add deterministic noise bit to representation.")
     parser.add_argument("--noise-seed", type=int, default=123, help="Noise seed used by LastKWithNoise.")
@@ -111,7 +169,7 @@ def _parse_args() -> argparse.Namespace:
         help="How to encode condition_id/wrappers fields.",
     )
 
-    parser.add_argument("--save-transitions", action="store_true", help="Save discrete state transitions.")
+    parser.add_argument("--save-transitions", action="store_true", help="Save reconstructed macrostate transitions.")
     parser.add_argument("--show-transitions-for", type=str, default=None, help="Representation name to print.")
     parser.add_argument("--show-seed", type=int, default=None, help="Seed for transition inspection.")
     parser.add_argument("--show-flip-p", type=float, default=None, help="flip_p for transition inspection.")
@@ -124,7 +182,11 @@ def _build_process(args: argparse.Namespace):
     if args.process == "continuous_file":
         if args.data_path is None:
             raise ValueError("--data-path is required for --process continuous_file")
-        return PROCESS_REGISTRY[args.process](path=args.data_path, column=args.data_column)
+        return PROCESS_REGISTRY[args.process](
+            path=args.data_path,
+            column=args.data_column,
+            columns=tuple(args.data_columns) if args.data_columns is not None else None,
+        )
     if args.process == "linear_gaussian_ssm":
         return PROCESS_REGISTRY[args.process](
             a=args.lgssm_a,
@@ -132,13 +194,16 @@ def _build_process(args: argparse.Namespace):
             process_std=args.lgssm_process_std,
             obs_std=args.lgssm_obs_std,
             init_std=args.lgssm_init_std,
+            latent_dim=args.lgssm_latent_dim,
+            obs_dim=args.lgssm_obs_dim,
+            coupling_std=args.lgssm_coupling_std,
         )
     return PROCESS_REGISTRY[args.process]()
 
 
 def _build_representations(args: argparse.Namespace) -> list[Representation]:
     if args.reconstructor == "kalman_iss":
-        return [ISSDim(d=k) for k in args.ks]
+        return [ISSDim(d=d, dv=dv) for d, dv in product(args.ks, args.dvs)]
     if args.noisy:
         noise = bernoulli_noise(length=args.length, seed=args.noise_seed)
         return [LastKWithNoise(k=k, noise=noise) for k in args.ks]
@@ -160,10 +225,28 @@ def main() -> None:
         raise ValueError("--reconstructor one_step only supports discrete binary processes.")
     if args.reconstructor == "kalman_iss" and args.noisy:
         raise ValueError("--noisy is only valid for discrete LastK representations.")
-    if args.reconstructor == "kalman_iss" and args.save_transitions:
-        raise ValueError("Continuous Kalman ISS runs do not support --save-transitions.")
-    if args.reconstructor == "kalman_iss" and args.show_transitions_for is not None:
-        raise ValueError("Continuous Kalman ISS runs do not support --show-transitions-for.")
+    if args.compute_psi and args.reconstructor != "kalman_iss":
+        raise ValueError("--compute-psi is only supported with --reconstructor kalman_iss.")
+    if args.psi_restarts < 1:
+        raise ValueError("--psi-restarts must be >= 1.")
+    if args.psi_iters < 1:
+        raise ValueError("--psi-iters must be >= 1.")
+    if any(k < 1 for k in args.ks):
+        raise ValueError("All --ks values must be >= 1.")
+    if any(dv < 1 for dv in args.dvs):
+        raise ValueError("All --dvs values must be >= 1.")
+    if args.data_column is not None and args.data_columns is not None:
+        raise ValueError("Use either --data-column or --data-columns, not both.")
+    if args.macro_eps < 0.0:
+        raise ValueError("--macro-eps must be >= 0.")
+    if args.macro_bins < 1:
+        raise ValueError("--macro-bins must be >= 1.")
+    if args.steady_state_tol <= 0.0:
+        raise ValueError("--steady-state-tol must be > 0.")
+    if args.steady_state_max_iter < 1:
+        raise ValueError("--steady-state-max-iter must be >= 1.")
+    if args.steady_state_ridge < 0.0:
+        raise ValueError("--steady-state-ridge must be >= 0.")
 
     args.outdir = _make_outdir(
         base=args.outdir,
@@ -187,6 +270,24 @@ def main() -> None:
             em_iters=args.em_iters,
             em_tol=args.em_tol,
             em_ridge=args.em_ridge,
+            macro_eps=args.macro_eps,
+            macro_bins=args.macro_bins,
+            macro_symboliser=args.macro_symboliser,
+            projection_mode=args.macro_projection,
+            iss_mode=args.iss_mode,
+            allow_time_varying_fallback=args.allow_time_varying_fallback,
+            steady_state_tol=args.steady_state_tol,
+            steady_state_max_iter=args.steady_state_max_iter,
+            steady_state_ridge=args.steady_state_ridge,
+            compute_psi=args.compute_psi,
+            psi_optimiser=args.psi_optimiser,
+            psi_restarts=args.psi_restarts,
+            psi_iterations=args.psi_iters,
+            psi_lr=args.psi_lr,
+            psi_step_scale=args.psi_step_scale,
+            psi_tol=args.psi_tol,
+            psi_max_iter=args.psi_max_iter,
+            psi_ridge=args.psi_ridge,
         )
     else:
         reconstructor = RECONSTRUCTOR_REGISTRY[args.reconstructor](eps=args.eps)
@@ -199,6 +300,7 @@ def main() -> None:
         "train_frac": args.train_frac,
         "seeds": args.seeds,
         "representations": [r.name for r in representations],
+        "dvs": args.dvs,
         "flip_ps": flip_ps,
         "subsample_steps": subsample_steps,
         "noisy_representation": args.noisy,
@@ -208,10 +310,41 @@ def main() -> None:
         "condition_id_style": args.condition_id_style,
         "data_path": str(args.data_path) if args.data_path is not None else None,
         "data_column": args.data_column,
+        "data_columns": args.data_columns,
+        "linear_gaussian_ssm": {
+            "a": args.lgssm_a,
+            "c": args.lgssm_c,
+            "process_std": args.lgssm_process_std,
+            "obs_std": args.lgssm_obs_std,
+            "init_std": args.lgssm_init_std,
+            "latent_dim": args.lgssm_latent_dim,
+            "obs_dim": args.lgssm_obs_dim,
+            "coupling_std": args.lgssm_coupling_std,
+        }
+        if args.process == "linear_gaussian_ssm"
+        else None,
         "kalman_iss": {
             "em_iters": args.em_iters,
             "em_tol": args.em_tol,
             "em_ridge": args.em_ridge,
+            "macro_eps": args.macro_eps,
+            "macro_bins": args.macro_bins,
+            "macro_symboliser": args.macro_symboliser,
+            "macro_projection": args.macro_projection,
+            "iss_mode": args.iss_mode,
+            "allow_time_varying_fallback": args.allow_time_varying_fallback,
+            "steady_state_tol": args.steady_state_tol,
+            "steady_state_max_iter": args.steady_state_max_iter,
+            "steady_state_ridge": args.steady_state_ridge,
+            "compute_psi": args.compute_psi,
+            "psi_optimiser": args.psi_optimiser,
+            "psi_restarts": args.psi_restarts,
+            "psi_iterations": args.psi_iters,
+            "psi_lr": args.psi_lr,
+            "psi_step_scale": args.psi_step_scale,
+            "psi_tol": args.psi_tol,
+            "psi_max_iter": args.psi_max_iter,
+            "psi_ridge": args.psi_ridge,
         }
         if args.reconstructor == "kalman_iss"
         else None,

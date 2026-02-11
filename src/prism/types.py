@@ -1,9 +1,7 @@
-"""Shared type aliases used across PRISM."""
+from typing import Sequence, Tuple, Union
 
-from typing import Sequence, Union
-
-# PRISM currently supports scalar discrete (int) and scalar continuous (float)
-# observation streams.
-Obs = Union[int, float]
-LatentState = Union[int, float]
+# Observations are either scalar (discrete or continuous) or fixed-width tuples for
+# multivariate continuous streams.
+Obs = Union[int, float, Tuple[float, ...]]
+LatentState = Union[int, float, Tuple[float, ...]]
 ObsSequence = Sequence[Obs]

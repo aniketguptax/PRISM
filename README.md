@@ -5,7 +5,8 @@ Predictive Representations for Inference of Scale and Macrostates.
 PRISM supports two pipelines:
 
 - Discrete binary processes with `LastK` representations and one-step merge reconstruction.
-- Continuous scalar time series with Kalman ISS (linear-Gaussian state-space) reconstruction.
+- Continuous multivariate time series with Kalman ISS reconstruction plus macrostate
+  construction over `(d, d_V)`.
 
 ## Setup
 
@@ -15,13 +16,21 @@ conda activate prism39
 python -m pip install -r requirements.txt
 ```
 
-Graphviz is required only for discrete transition rendering:
+Graphviz is required for transition graph rendering:
 
 ```bash
 brew install graphviz  # macOS
 ```
 
-## Discrete run (binary baseline)
+## Discrete run
+
+Discrete semantics:
+- Reconstruction is fit on the training prefix only.
+- Held-out log-loss is evaluated on the test suffix, but each test-time representation
+  `z_t = phi_k(x_{1:t})` is computed from the full observed past across the
+  train/test boundary (`x_train + x_test`).
+- No model parameters are refit on held-out data; unseen test-time contexts back off
+  to `p(x_{t+1}=1)=0.5`.
 
 ```bash
 cd src
@@ -31,11 +40,11 @@ python -m prism.cli \
   --ks 2 3 4 5 \
   --seeds 0 1 2 \
   --length 200000 \
-  --outdir ../results/even_k_sweep \
+  --outdir ./results/even_k_sweep \
   --force
 ```
 
-Optional transition export (discrete-only):
+Optional transition export:
 
 ```bash
 python -m prism.cli \
@@ -46,7 +55,7 @@ python -m prism.cli \
   --length 200000 \
   --save-transitions \
   --show-transitions-for last_2 \
-  --outdir ../results/even_transitions \
+  --outdir ./results/even_transitions \
   --force
 ```
 
@@ -59,10 +68,13 @@ cd src
 python -m prism.cli \
   --process linear_gaussian_ssm \
   --reconstructor kalman_iss \
-  --ks 1 2 3 4 \
+  --ks 1 2 3 \
+  --dvs 1 2 \
+  --macro-eps 0.25 \
+  --macro-bins 3 \
   --seeds 0 1 2 \
   --length 5000 \
-  --outdir ../results/continuous_iss_sweep \
+  --outdir ./results/continuous_iss_sweep \
   --force
 ```
 
@@ -73,16 +85,41 @@ cd src
 python -m prism.cli \
   --process continuous_file \
   --data-path /absolute/path/to/series.csv \
-  --data-column 0 \
+  --data-columns 0 1 2 \
   --reconstructor kalman_iss \
-  --ks 2 4 6 \
+  --ks 2 4 \
+  --dvs 1 2 \
   --seeds 0 1 \
   --length 10000 \
-  --outdir ../results/continuous_file_iss \
+  --outdir ./results/continuous_file_iss \
   --force
 ```
 
-`kalman_iss` does not expose discrete symbol-conditioned transitions, so `--save-transitions` is intentionally blocked.
+### ISS Psi optimisation
+
+You can optimise ISS Psi over a macro projection matrix `L` during fitting:
+
+```bash
+cd src
+python -m prism.cli \
+  --process linear_gaussian_ssm \
+  --reconstructor kalman_iss \
+  --macro-projection psi_opt \
+  --compute-psi \
+  --psi-optimiser random \
+  --psi-restarts 12 \
+  --psi-iters 120 \
+  --ks 1 2 3 \
+  --dvs 1 2 \
+  --seeds 0 1 \
+  --length 5000 \
+  --outdir ./results/continuous_iss_psi \
+  --force
+```
+
+This writes `psi_opt`, `psi_macro_dim`, and `psi_optimiser` into `runs.csv`.
+
+`--psi-optimiser torch_adam` is also supported for gradient-based optimisation, but requires a local torch install.
 
 ## Summaries and figures
 
@@ -93,8 +130,6 @@ python -m prism.analysis.plot_k --root ../results/even_k_sweep --metrics logloss
 python -m prism.analysis.phase_diagram --root ../results/even_k_sweep
 ```
 
-For continuous runs, phase-diagram plots are skipped automatically when branch/unifilarity metrics are undefined.
-
 ## Smoke commands
 
 From repository root:
@@ -102,6 +137,7 @@ From repository root:
 ```bash
 make smoke-discrete
 make smoke-continuous
+make smoke-continuous-psi
 ```
 
 ## Tests

@@ -7,7 +7,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import subprocess
 
-from prism.reconstruction.protocols import PredictiveStateModel
+from prism.reconstruction.protocols import TransitionModel
 
 Edge = Tuple[int, int, int, float]  # (state, symbol, next_state, probability)
 
@@ -28,7 +28,7 @@ class DotStyle:
     esep: str = "+10,10"
 
     fontname: str = "Helvetica"
-    fontcolor: str = "#222222"
+    font_colour: str = "#222222"
     graph_fontsize: int = 18
     node_fontsize: int = 15
     edge_fontsize: int = 12
@@ -39,13 +39,13 @@ class DotStyle:
     node_height: float = 0.95
     node_penwidth: float = 1.8
     node_margin: float = 0.06
-    node_color: str = "#222222"
-    node_fontcolor: Optional[str] = None
+    node_colour: str = "#222222"
+    node_font_colour: Optional[str] = None
 
     arrowsize: float = 1.25
     edge_penwidth: float = 1.4
-    edge_color: str = "#222222"
-    edge_fontcolor: Optional[str] = None
+    edge_colour: str = "#222222"
+    edge_font_colour: Optional[str] = None
 
     # label placement on the edge (NOT external labels)
     labelfloat: str = "true"
@@ -78,7 +78,7 @@ class DotStyle:
     label_symbol_bold: bool = True
 
 
-def to_edge_list(model: PredictiveStateModel) -> List[Edge]:
+def to_edge_list(model: TransitionModel) -> List[Edge]:
     edges: List[Edge] = []
     for (s, sym), sp_dict in model.transitions.items():
         for sp, prob in sp_dict.items():
@@ -200,7 +200,7 @@ def to_dot(
         lines.append("  forcelabels=true;")
 
     lines.append(
-        f'  graph [fontname="{st.fontname}", fontsize={st.graph_fontsize}, fontcolor="{st.fontcolor}"];'
+        f'  graph [fontname="{st.fontname}", fontsize={st.graph_fontsize}, fontcolor="{st.font_colour}"];'
     )
 
     node_attrs = [
@@ -208,8 +208,8 @@ def to_dot(
         f'fontname="{st.fontname}"',
         f"fontsize={st.node_fontsize}",
         f"penwidth={st.node_penwidth}",
-        f'color="{st.node_color}"',
-        f'fontcolor="{st.node_fontcolor or st.fontcolor}"',
+        f'color="{st.node_colour}"',
+        f'fontcolor="{st.node_font_colour or st.font_colour}"',
         f"margin={st.node_margin}",
     ]
     if st.node_fixedsize:
@@ -221,8 +221,8 @@ def to_dot(
         f"fontsize={st.edge_fontsize}",
         f"arrowsize={st.arrowsize}",
         f"penwidth={st.edge_penwidth}",
-        f'color="{st.edge_color}"',
-        f'fontcolor="{st.edge_fontcolor or st.fontcolor}"',
+        f'color="{st.edge_colour}"',
+        f'fontcolor="{st.edge_font_colour or st.font_colour}"',
         "decorate=false",
         f"labelfloat={st.labelfloat}",
     ]

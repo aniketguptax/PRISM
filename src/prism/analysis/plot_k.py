@@ -1,5 +1,3 @@
-"""Plot summary metrics as a function of representation size `k`."""
-
 import argparse
 import csv
 import math
@@ -44,6 +42,7 @@ def filter_rows(
     representation: Optional[str] = None,
     flip_ps: Optional[Sequence[float]] = None,
     condition_id: Optional[str] = None,
+    dv: Optional[int] = None,
 ) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     for row in rows:
@@ -56,6 +55,10 @@ def filter_rows(
             continue
         if condition_id is not None and row.get("condition_id", "") != condition_id:
             continue
+        if dv is not None:
+            row_dv = _safe_int(row.get("dv", ""))
+            if row_dv is None or row_dv != dv:
+                continue
         flip_p = _safe_float(row.get("flip_p", "0.0"))
         if flip_p is None:
             continue
@@ -72,23 +75,24 @@ def plot_metric_vs_k(rows: List[Dict[str, str]], metric: str, outpath: Path) -> 
         print(f"Skipping {metric}: column {mean_col} not available.")
         return False
 
-    by_flip: Dict[float, List[tuple[int, float, float]]] = {}
+    by_group: Dict[tuple[float, Optional[int]], List[tuple[int, float, float]]] = {}
     for row in rows:
         flip = _safe_float(row.get("flip_p", ""))
+        dv = _safe_int(row.get("dv", ""))
         k = _safe_int(row.get("k", ""))
         mean_value = _safe_float(row.get(mean_col, ""))
         std_value = _safe_float(row.get(std_col, "0") or "0")
         if flip is None or k is None or mean_value is None:
             continue
-        by_flip.setdefault(flip, []).append((k, mean_value, 0.0 if std_value is None else std_value))
+        by_group.setdefault((flip, dv), []).append((k, mean_value, 0.0 if std_value is None else std_value))
 
-    if not by_flip:
+    if not by_group:
         print(f"Skipping {metric}: no finite values after filtering.")
         return False
 
     plt.figure(figsize=(4.8, 3.2))
     any_curve = False
-    for flip, points in sorted(by_flip.items(), key=lambda item: item[0]):
+    for (flip, dv), points in sorted(by_group.items(), key=lambda item: (item[0][0], item[0][1] or -1)):
         points_sorted = sorted(points, key=lambda item: item[0])
         xs = [point[0] for point in points_sorted]
         ys = [point[1] for point in points_sorted]
@@ -96,7 +100,8 @@ def plot_metric_vs_k(rows: List[Dict[str, str]], metric: str, outpath: Path) -> 
         if not xs:
             continue
         any_curve = True
-        plt.errorbar(xs, ys, yerr=yerrs, fmt="o-", capsize=3, label=f"flip_p={flip:g}")
+        label = f"flip_p={flip:g}" if dv is None else f"flip_p={flip:g}, d_V={dv}"
+        plt.errorbar(xs, ys, yerr=yerrs, fmt="o-", capsize=3, label=label)
     if not any_curve:
         plt.close()
         print(f"Skipping {metric}: no plottable points.")
@@ -108,11 +113,13 @@ def plot_metric_vs_k(rows: List[Dict[str, str]], metric: str, outpath: Path) -> 
         "unifilarity_score": "Unifilarity score",
         "logloss": "Log-loss (nats)",
         "gaussian_logloss": "Gaussian log-loss (nats)",
-        "n_states": "State count / latent dimension",
+        "n_states": "Macrostate count |M|",
         "C_mu_empirical": "$C_\\mu$ (empirical)",
+        "psi_opt": "Optimised ISS $\\Psi$",
+        "psi_macro_dim": "Optimised macro dimension",
     }.get(metric, metric)
     plt.ylabel(ylabel)
-    if len(by_flip) > 1:
+    if len(by_group) > 1:
         plt.legend(fontsize=8)
     outpath.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
@@ -128,6 +135,7 @@ def main() -> None:
     parser.add_argument("--subsample-step", type=int, default=1)
     parser.add_argument("--base-process", type=str, default=None)
     parser.add_argument("--representation", type=str, default=None)
+    parser.add_argument("--dv", type=int, default=None)
     parser.add_argument("--flip-ps", nargs="+", type=float, default=None)
     parser.add_argument("--condition-id", type=str, default=None)
     parser.add_argument(
@@ -146,6 +154,7 @@ def main() -> None:
         subsample_step=args.subsample_step,
         base_process=args.base_process,
         representation=args.representation,
+        dv=args.dv,
         flip_ps=args.flip_ps,
         condition_id=args.condition_id,
     )

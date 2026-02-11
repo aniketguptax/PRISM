@@ -1,5 +1,3 @@
-"""Phase-diagram plots for closure metrics over `(flip_p, k)`."""
-
 import argparse
 import csv
 import math
@@ -21,6 +19,7 @@ class Row:
     base_process: str
     representation: str
     condition_id: str
+    dv: Optional[int]
 
 
 def _safe_float(value: str) -> Optional[float]:
@@ -66,6 +65,7 @@ def read_rows(path: Path) -> List[Row]:
                     base_process=raw.get("base_process", ""),
                     representation=raw.get("representation", ""),
                     condition_id=raw.get("condition_id", ""),
+                    dv=_safe_int(raw.get("dv", "")),
                 )
             )
     return rows
@@ -76,6 +76,7 @@ def filter_rows(
     base_process: Optional[str],
     representation: Optional[str],
     condition_id: Optional[str],
+    dv: Optional[int],
 ) -> List[Row]:
     out: List[Row] = []
     for row in rows:
@@ -84,6 +85,8 @@ def filter_rows(
         if representation is not None and row.representation != representation:
             continue
         if condition_id is not None and row.condition_id != condition_id:
+            continue
+        if dv is not None and row.dv != dv:
             continue
         out.append(row)
     return out
@@ -200,6 +203,7 @@ def main() -> None:
     parser.add_argument("--base-process", type=str, default=None)
     parser.add_argument("--representation", type=str, default=None)
     parser.add_argument("--condition-id", type=str, default=None)
+    parser.add_argument("--dv", type=int, default=None)
     args = parser.parse_args()
 
     summary_csv = args.root / args.infile
@@ -211,6 +215,7 @@ def main() -> None:
         base_process=args.base_process,
         representation=args.representation,
         condition_id=args.condition_id,
+        dv=args.dv,
     )
     if not rows:
         print("No finite branch/unifilarity rows after filtering; skipping phase diagram.")
