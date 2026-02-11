@@ -168,3 +168,56 @@ At this point, the reconstruction is arguably _too_ aggressive, but it seems to 
 Nice to have controlled experiements that back up the hypothesis.
 
 Comparing the two has made me increasingly confident that the evaluation pipeline is not only "working", but kind of saying something nontrivial.
+
+## Noise + wrappers (quick stress tests)
+
+Tried bit-flip noise on MarkovOrder2.
+
+- As flip p goes up: log-loss gets worse (expected).
+- Unifilarity drops + branching entropy rises.
+- More states show up (some is just noisier \hat p estimates splitting things).
+
+This is *not* the Even Process situation. Here the generator is still simple, but the observation channel is messing with the “state update given next symbol” story.
+
+Subsampling: I played with it a bit but it’s harder to interpret cleanly (can induce longer memory), so I’m not leaning on it much.
+
+---
+
+## Train/test scoring fix (discrete)
+
+Found an issue in how I was doing held-out loss: I wasn’t always using the full past across the train/test boundary when forming test-time representations.
+
+Fixed it so:
+- fit everything on train only (g, predictors, transitions)
+- but when scoring on test, z_t uses the real history x_{1:t} (so context carries over)
+- params still frozen; no learning on test
+
+This makes the held-out loss reflect “keep predicting the same stream” instead of artificially resetting at the boundary.
+
+---
+
+## Continuous bridge + ISS proof
+
+Pedro asked about “ISS are epsilon-machines” so I wrote it properly for the steady-state LGSSM case:
+
+- filtering distribution is Gaussian
+- in steady state covariance is constant so predictive info is in the mean S_t
+- S_t is sufficient for predicting the future (in the model class)
+- update is deterministic given (S_t, X_{t+1}) (unifilarity analogue)
+
+It’s explicitly scoped to steady-state linear–Gaussian; not claiming anything general.
+
+---
+
+## Continuous PRISM pipeline status
+
+Got the continuous pipeline running end-to-end:
+
+- Fit LGSSM on train (EM), solve DARE for steady-state gain, run ISS to get S_t
+- Define macro variables V_t = L X_t
+- Sweep d and d_V
+- L options: PCA default, random row-normalised, psi-opt when enabled
+
+Important: macrostate reconstruction is in macro space (predictive law of V_{t+1} / projected Gaussian), not in X-space.
+
+Transitions/closure-style diagnostics: currently done via deterministic symbolisation of V (train-fit, frozen) to estimate P(M_{t+1} | M_t, \tilde V_{t+1}) and compute unifilarity/branching proxies. Prediction loss stays continuous (Gaussian NLL).
