@@ -1,6 +1,7 @@
 import logging
 import math
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
@@ -215,8 +216,30 @@ def run_experiment(
     cond = _cond_fields(condition, process.name)
     condition_id = cond["condition_id"]
     transitions_dir = outdir / "transitions"
+    n_seeds = len(seeds)
+    n_reps = len(representations)
+    total_tasks = n_seeds * n_reps
+    completed_tasks = 0
+    run_start = time.perf_counter()
 
-    for seed in seeds:
+    LOGGER.info(
+        "Experiment start | process=%s reconstructor=%s condition=%s seeds=%d representations=%d",
+        process.name,
+        reconstructor.name,
+        condition_id,
+        n_seeds,
+        n_reps,
+    )
+
+    def _fmt_value(value: Any, *, digits: int = 4) -> str:
+        if isinstance(value, (int, float)):
+            number = float(value)
+            if math.isnan(number) or math.isinf(number):
+                return "nan"
+            return f"{number:.{digits}f}"
+        return str(value)
+
+    for seed_idx, seed in enumerate(seeds, start=1):
         sample = process.sample(length=length, seed=seed)
         x = sample.x
         if len(x) < 2:
@@ -226,9 +249,18 @@ def run_experiment(
         split = int(len(x) * train_frac)
         split = max(1, min(split, len(x) - 1))
         x_train, x_test = x[:split], x[split:]
+        LOGGER.info(
+            "Seed %d/%d | seed=%d train=%d test=%d",
+            seed_idx,
+            n_seeds,
+            seed,
+            len(x_train),
+            len(x_test),
+        )
 
         rows: list[dict[str, Any]] = []
-        for rep in representations:
+        for rep_idx, rep in enumerate(representations, start=1):
+            rep_start = time.perf_counter()
             model = reconstructor.fit(x_train, rep, seed=seed)
             metrics: Dict[str, Any]
             model_valid = True
@@ -276,4 +308,27 @@ def run_experiment(
                     **metrics,
                 }
             )
+            completed_tasks += 1
+            elapsed_rep = time.perf_counter() - rep_start
+            LOGGER.info(
+                "Progress %d/%d | seed=%d rep=%d/%d (%s) logloss=%s n_states=%s elapsed=%.2fs",
+                completed_tasks,
+                total_tasks,
+                seed,
+                rep_idx,
+                n_reps,
+                rep.name,
+                _fmt_value(metrics.get("logloss", math.nan)),
+                _fmt_value(metrics.get("n_states", math.nan), digits=2),
+                elapsed_rep,
+            )
         save_csv(metrics_path, rows, append=True, fieldnames=fieldnames)
+        LOGGER.info("Seed %d/%d complete | wrote %d rows to %s", seed_idx, n_seeds, len(rows), metrics_path)
+
+    LOGGER.info(
+        "Experiment complete | condition=%s total_rows=%d elapsed=%.2fs output=%s",
+        condition_id,
+        total_tasks,
+        time.perf_counter() - run_start,
+        metrics_path,
+    )

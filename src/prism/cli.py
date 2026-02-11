@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 from datetime import datetime
 from itertools import product
 from pathlib import Path
@@ -12,9 +13,11 @@ from prism.representations import ISSDim, LastK
 from prism.representations.discrete import LastKWithNoise
 from prism.representations.protocols import Representation
 from prism.utils.io import save_json
+from prism.utils.logging import configure_logging
 from prism.utils.rng import bernoulli_noise
 
 CONTINUOUS_PROCESSES = {"continuous_file", "linear_gaussian_ssm"}
+LOGGER = logging.getLogger(__name__)
 
 
 def _make_outdir(
@@ -174,6 +177,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--show-seed", type=int, default=None, help="Seed for transition inspection.")
     parser.add_argument("--show-flip-p", type=float, default=None, help="flip_p for transition inspection.")
     parser.add_argument("--show-subsample-step", type=int, default=None, help="subsample step for transition inspection.")
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="CLI logging verbosity.",
+    )
 
     return parser.parse_args()
 
@@ -212,6 +222,8 @@ def _build_representations(args: argparse.Namespace) -> list[Representation]:
 
 def main() -> None:
     args = _parse_args()
+    configure_logging(getattr(logging, args.log_level))
+
     flip_ps = args.flip_ps if args.flip_ps is not None else [args.flip_p]
     subsample_steps = args.subsample_steps if args.subsample_steps is not None else [args.subsample_step]
     _validate_sweep(flip_ps, subsample_steps)
@@ -351,9 +363,27 @@ def main() -> None:
     }
     args.outdir.mkdir(parents=True, exist_ok=True)
     save_json(args.outdir / "config.json", config)
+    LOGGER.info(
+        "Running PRISM | process=%s reconstructor=%s reps=%d seeds=%d outdir=%s",
+        args.process,
+        args.reconstructor,
+        len(representations),
+        len(args.seeds),
+        args.outdir,
+    )
+    total_conditions = len(flip_ps) * len(subsample_steps)
+    condition_index = 0
 
     for flip_p in flip_ps:
         for step in subsample_steps:
+            condition_index += 1
+            LOGGER.info(
+                "Condition %d/%d | flip_p=%g subsample_step=%d",
+                condition_index,
+                total_conditions,
+                flip_p,
+                step,
+            )
             process = _build_process(args)
             if flip_p > 0.0:
                 if args.process in CONTINUOUS_PROCESSES:
@@ -382,6 +412,9 @@ def main() -> None:
                 save_transitions=args.save_transitions,
                 transitions_rep_name=args.show_transitions_for if args.save_transitions else None,
             )
+            LOGGER.info("Condition %d/%d complete", condition_index, total_conditions)
+
+    LOGGER.info("Run complete | metrics at %s", args.outdir / "runs.csv")
 
     if args.show_transitions_for is None:
         return

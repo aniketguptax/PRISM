@@ -31,6 +31,8 @@ Discrete semantics:
   train/test boundary (`x_train + x_test`).
 - No model parameters are refit on held-out data; unseen test-time contexts back off
   to `p(x_{t+1}=1)=0.5`.
+- CLI progress is printed at `INFO` level by default; use `--log-level WARNING`
+  (or `ERROR`) for quieter runs.
 
 ```bash
 cd src
