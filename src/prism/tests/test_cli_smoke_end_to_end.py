@@ -16,7 +16,7 @@ def _module_python() -> str:
     return sys.executable
 
 
-def _run_module(module: str, args: list[str], tmp_path: Path) -> None:
+def _run_module(module: str, args: list[str], tmp_path: Path) -> subprocess.CompletedProcess[str]:
     env = {
         "HOME": os.environ.get("HOME", ""),
         "PATH": os.environ.get("PATH", ""),
@@ -29,7 +29,7 @@ def _run_module(module: str, args: list[str], tmp_path: Path) -> None:
         value = os.environ.get(key)
         if value is not None:
             env[key] = value
-    subprocess.run(
+    return subprocess.run(
         [_module_python(), "-m", module, *args],
         cwd=SRC_ROOT,
         env=env,
@@ -136,3 +136,35 @@ def test_continuous_cli_sweep_d_and_dv(tmp_path: Path) -> None:
 
     _run_module("prism.analysis.summarise", ["--root", str(outdir)], tmp_path)
     assert (outdir / "summary_by_condition.csv").exists()
+
+
+def test_cli_reports_progress_logs(tmp_path: Path) -> None:
+    outdir = tmp_path / "progress_run"
+    proc = _run_module(
+        "prism.cli",
+        [
+            "--process",
+            "iid_bernoulli",
+            "--reconstructor",
+            "one_step",
+            "--ks",
+            "1",
+            "--length",
+            "800",
+            "--train-frac",
+            "0.8",
+            "--seeds",
+            "0",
+            "--outdir",
+            str(outdir),
+            "--force",
+            "--log-level",
+            "INFO",
+        ],
+        tmp_path,
+    )
+
+    # logging.basicConfig writes to stderr by default
+    assert "Running PRISM |" in proc.stderr
+    assert "Condition 1/1" in proc.stderr
+    assert "Progress 1/1" in proc.stderr
