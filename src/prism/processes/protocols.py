@@ -1,11 +1,12 @@
 from dataclasses import dataclass
-from typing import List, Optional, Protocol
+from typing import Optional, Protocol, Sequence
 
+from prism.types import LatentState, Obs
 
 @dataclass(frozen=True)
 class Sample:
-    x: List[int]
-    latent: Optional[List[int]] = None
+    x: Sequence[Obs]
+    latent: Optional[Sequence[LatentState]] = None
 
 
 class Process(Protocol):
