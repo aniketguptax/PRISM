@@ -5,12 +5,6 @@ from .protocols import Process, Sample
 
 
 class MarkovOrder2(Process):
-    """
-    Order-2 binary Markov process:
-      P(X_{t+1}=1 | X_{t-1}=a, X_t=b) = p[(a,b)]
-    where (a,b) in {(0,0),(0,1),(1,0),(1,1)}.
-    """
-
     @property
     def name(self) -> str:
         return "markov_order_2"
@@ -32,10 +26,19 @@ class MarkovOrder2(Process):
         self.p = dict(p)
 
     def sample(self, length: int, seed: int) -> Sample:
+        if length < 1:
+            raise ValueError(f"length must be >= 1, got {length}.")
+
         rng = random.Random(seed)
-        # initialise with two random bits
         x0 = 1 if rng.random() < 0.5 else 0
+        if length == 1:
+            return Sample(x=[x0], latent=None)
+
         x1 = 1 if rng.random() < 0.5 else 0
+        if length == 2:
+            return Sample(x=[x0, x1], latent=None)
+
+        # initialise with two random bits
         x = [x0, x1]
 
         for _ in range(length - 2):

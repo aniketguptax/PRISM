@@ -1,158 +1,155 @@
-# PRISM (Work in Progress)
+# PRISM
 
-Predictive Representations for Inference of Scale and Macrostates
+Predictive Representations for Inference of Scale and Macrostates.
 
-PRISM is my final-year MEng Computing project.
-It implements an experimental pipeline for studying **emergent macrostates** and **predictive state machines** under **representational constraints**.
+PRISM supports two pipelines:
 
----
+- Discrete binary processes with `LastK` representations and one-step merge reconstruction.
+- Continuous multivariate time series with Kalman ISS reconstruction plus macrostate
+  construction over `(d, d_V)`.
 
-## What this project does
+## Setup
 
-At a high level:
-
-- Generates binary time series from simple stochastic processes
-- Applies fixed representations (e.g. last‑k histories)
-- Reconstructs macrostates using a simple, explicit algorithm
-- Evaluates prediction quality and computational closure properties
-- Produces figures and state-machine diagrams
-
----
-
-## Environment setup
-
-I run everything in **Python 3.9** for dependency stability.
-
-### Create environment
 ```bash
 conda create -n prism39 python=3.9 -y
 conda activate prism39
-```
-
-### Install dependencies
-```bash
 python -m pip install -r requirements.txt
 ```
 
-### Graphviz (required)
+Graphviz is required for transition graph rendering:
 
-Graphviz is needed to render learned state machines.
-
-On macOS:
 ```bash
-brew install graphviz
+brew install graphviz  # macOS
 ```
 
-On Ubuntu:
-```bash
-sudo apt install graphviz
-```
+## Discrete run
 
-On Windows:
-
-Install an up-to-date package from [Graphviz](https://graphviz.org/download/)
-
----
-
-## Running experiments (CLI)
-
-The main entry point is the CLI:
+Discrete semantics:
+- Reconstruction is fit on the training prefix only.
+- Held-out log-loss is evaluated on the test suffix, but each test-time representation
+  `z_t = phi_k(x_{1:t})` is computed from the full observed past across the
+  train/test boundary (`x_train + x_test`).
+- No model parameters are refit on held-out data; unseen test-time contexts back off
+  to `p(x_{t+1}=1)=0.5`.
+- CLI progress is printed at `INFO` level by default; use `--log-level WARNING`
+  (or `ERROR`) for quieter runs.
 
 ```bash
-python -m prism.cli
-```
-
-Example: Even Process with a sweep over `k`:
-```bash
+cd src
 python -m prism.cli \
   --process even_process \
+  --reconstructor one_step \
   --ks 2 3 4 5 \
-  --seeds 0 1 2 3 4 \
+  --seeds 0 1 2 \
   --length 200000 \
-  --outdir results/even_k_sweep \
+  --outdir ./results/even_k_sweep \
   --force
 ```
 
-This produces:
-- `runs.csv` — raw per-seed results
-- `config.json` — run configuration
-- State-machine transition files (optionally) 
-
----
-
-## Saving and visualising transitions
-
-To export reconstructed state machines:
+Optional transition export:
 
 ```bash
 python -m prism.cli \
   --process even_process \
+  --reconstructor one_step \
   --ks 2 \
   --seeds 0 \
   --length 200000 \
   --save-transitions \
-  --show-transitions-for last_2
+  --show-transitions-for last_2 \
+  --outdir ./results/even_transitions \
+  --force
 ```
 
-This produces `.json`, `.dot`, and `.png` files under:
-```
-results/<run>/transitions/
-```
+## Continuous run (Kalman ISS)
 
----
-
-## Summarising results
-
-After a run completes:
+Synthetic continuous process:
 
 ```bash
-python -m prism.analysis.summarise --root results/even_k_sweep
+cd src
+python -m prism.cli \
+  --process linear_gaussian_ssm \
+  --reconstructor kalman_iss \
+  --ks 1 2 3 \
+  --dvs 1 2 \
+  --macro-eps 0.25 \
+  --macro-bins 3 \
+  --seeds 0 1 2 \
+  --length 5000 \
+  --outdir ./results/continuous_iss_sweep \
+  --force
 ```
 
-This generates:
-- `summary_by_condition.csv`
-- `summary_simple.csv`
-
-These are the inputs for all plotting scripts.
-
----
-
-## Making figures
-
-To generate all standard figures in one go:
+File-backed continuous process:
 
 ```bash
-python -m prism.analysis.make_figures \
-  --root results/even_k_sweep \
-  --subsample-step 1 \
-  --metrics branch_entropy unifilarity_score logloss \
-  --phase
+cd src
+python -m prism.cli \
+  --process continuous_file \
+  --data-path /absolute/path/to/series.csv \
+  --data-columns 0 1 2 \
+  --reconstructor kalman_iss \
+  --ks 2 4 \
+  --dvs 1 2 \
+  --seeds 0 1 \
+  --length 10000 \
+  --outdir ./results/continuous_file_iss \
+  --force
 ```
 
-Figures are written to:
-```
-results/<run>/figures/
-```
+### ISS Psi optimisation
 
----
-
-## Frontend
-
-There is also a very simple frontend for running experiments and inspecting outputs:
+You can optimise ISS Psi over a macro projection matrix `L` during fitting:
 
 ```bash
-streamlit run src/prism/frontend/app.py
+cd src
+python -m prism.cli \
+  --process linear_gaussian_ssm \
+  --reconstructor kalman_iss \
+  --macro-projection psi_opt \
+  --compute-psi \
+  --psi-optimiser random \
+  --psi-restarts 12 \
+  --psi-iters 120 \
+  --ks 1 2 3 \
+  --dvs 1 2 \
+  --seeds 0 1 \
+  --length 5000 \
+  --outdir ./results/continuous_iss_psi \
+  --force
 ```
 
-The frontend is intentionally minimal and mostly wraps the existing CLI and analysis scripts.
+This writes `psi_opt`, `psi_macro_dim`, and `psi_optimiser` into `runs.csv`.
 
----
+`--psi-optimiser torch_adam` is also supported for gradient-based optimisation, but requires a local torch install.
 
-## Help
+## Summaries and figures
 
-For help with the pipeline, try:
 ```bash
-python -m prism.cli --help
+cd src
+python -m prism.analysis.summarise --root ../results/even_k_sweep
+python -m prism.analysis.plot_k --root ../results/even_k_sweep --metrics logloss n_states unifilarity_score branch_entropy
+python -m prism.analysis.phase_diagram --root ../results/even_k_sweep
+
+# Continuous-only analysis (ISS sweeps)
+python -m prism.analysis.summarise --root ../results/continuous_iss_sweep
+python -m prism.analysis.plot_k --root ../results/continuous_iss_sweep --dv 1 --metrics gaussian_logloss n_states C_mu_empirical psi_opt
+python -m prism.analysis.continuous_heatmaps --root ../results/continuous_iss_sweep --shared-scale
+python -m prism.analysis.compare_projection_modes --root ../results/continuous_iss_sweep --metrics gaussian_logloss n_states C_mu_empirical psi_opt
 ```
 
-Otherwise, get in touch with me.
+## Smoke commands
+
+From repository root:
+
+```bash
+make smoke-discrete
+make smoke-continuous
+make smoke-continuous-psi
+```
+
+## Tests
+
+```bash
+make test
+```
