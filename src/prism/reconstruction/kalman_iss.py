@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from itertools import combinations
 import math
+import time
 from typing import Optional, Sequence, Tuple
 
 import numpy as np
@@ -236,7 +238,7 @@ def _symmetric_gaussian_kl(mu_a: Array, cov_a: Array, mu_b: Array, cov_b: Array)
     return float(max(0.0, score))
 
 
-def _reconstruct_macrostates(
+def _reconstruct_macrostates_greedy(
     pred_means: Array,
     pred_covs: Array,
     *,
@@ -286,6 +288,230 @@ def _reconstruct_macrostates(
     return states
 
 
+def _pairwise_sym_kl(pred_means: Array, pred_covs: Array) -> Array:
+    n = pred_means.shape[0]
+    dist = np.zeros((n, n), dtype=float)
+    for i in range(n):
+        for j in range(i + 1, n):
+            val = _symmetric_gaussian_kl(pred_means[i], pred_covs[i], pred_means[j], pred_covs[j])
+            dist[i, j] = val
+            dist[j, i] = val
+    return dist
+
+
+def _reconstruct_macrostates_global_singlelink(dist: Array, *, eps: float) -> Array:
+    n = dist.shape[0]
+    labels = np.full(n, -1, dtype=int)
+    cluster = 0
+    for i in range(n):
+        if labels[i] >= 0:
+            continue
+        labels[i] = cluster
+        stack = [i]
+        while stack:
+            u = stack.pop()
+            neighbours = np.where((dist[u] <= eps) & (labels < 0))[0]
+            for v in neighbours.tolist():
+                labels[v] = cluster
+                stack.append(int(v))
+        cluster += 1
+    return labels
+
+
+def _reconstruct_macrostates_global_complete(dist: Array, *, eps: float) -> Array:
+    n = dist.shape[0]
+    clusters: list[list[int]] = [[i] for i in range(n)]
+    while True:
+        best_i = -1
+        best_j = -1
+        best_cost = math.inf
+        for i in range(len(clusters)):
+            ci = clusters[i]
+            for j in range(i + 1, len(clusters)):
+                cj = clusters[j]
+                cost = float(np.max(dist[np.ix_(ci, cj)]))
+                if cost < best_cost:
+                    best_cost = cost
+                    best_i = i
+                    best_j = j
+        if best_i < 0 or best_cost > eps:
+            break
+        clusters[best_i].extend(clusters[best_j])
+        del clusters[best_j]
+
+    labels = np.full(n, -1, dtype=int)
+    for idx, group in enumerate(clusters):
+        for pos in group:
+            labels[pos] = idx
+    return labels
+
+
+def _normalise_macro_builder(builder: str) -> str:
+    aliases = {
+        "global": "hierarchical_complete",
+        "global_complete": "hierarchical_complete",
+        "global_single": "hierarchical_single",
+        "linear": "linear_quantile",
+        "linear_baseline": "linear_quantile",
+    }
+    return aliases.get(builder, builder)
+
+
+def _valid_macro_builder(builder: str) -> bool:
+    mode = _normalise_macro_builder(builder)
+    return mode in {"greedy", "hierarchical_single", "hierarchical_complete", "linear_quantile"}
+
+
+def _reconstruct_macrostates(
+    pred_means: Array,
+    pred_covs: Array,
+    *,
+    eps: float,
+    builder: str,
+) -> Array:
+    mode = _normalise_macro_builder(builder)
+    if mode == "greedy":
+        return _reconstruct_macrostates_greedy(pred_means, pred_covs, eps=eps)
+    if mode == "linear_quantile":
+        raise ValueError("linear_quantile does not use predictor clustering.")
+    dist = _pairwise_sym_kl(pred_means, pred_covs)
+    if mode == "hierarchical_complete":
+        return _reconstruct_macrostates_global_complete(dist, eps=eps)
+    if mode == "hierarchical_single":
+        return _reconstruct_macrostates_global_singlelink(dist, eps=eps)
+    raise ValueError(
+        f"Unknown macro_builder={builder!r}. Expected 'greedy', 'hierarchical_single', 'hierarchical_complete', or 'linear_quantile'."
+    )
+
+
+def _state_prototypes(pred_mu: Array, pred_cov: Array, labels: Array) -> tuple[Array, Array]:
+    n_states = int(np.max(labels)) + 1
+    macro_dim = pred_mu.shape[1]
+    centres_mu = np.zeros((n_states, macro_dim), dtype=float)
+    centres_cov = np.zeros((n_states, macro_dim, macro_dim), dtype=float)
+    for state in range(n_states):
+        idx = np.where(labels == state)[0]
+        if idx.size == 0:
+            raise RuntimeError(f"State {state} has no support.")
+        mu_s = np.mean(pred_mu[idx], axis=0)
+        centred = pred_mu[idx] - mu_s[None, :]
+        between = (centred.T @ centred) / max(idx.size, 1)
+        within = np.mean(pred_cov[idx], axis=0)
+        centres_mu[state] = mu_s
+        centres_cov[state] = _ensure_spd(within + between)
+    return centres_mu, centres_cov
+
+
+def _assign_states(pred_mu: Array, pred_cov: Array, centres_mu: Array, centres_cov: Array) -> Array:
+    n = pred_mu.shape[0]
+    out = np.zeros(n, dtype=int)
+    for t in range(n):
+        best_state = 0
+        best_dist = math.inf
+        for s in range(centres_mu.shape[0]):
+            val = _symmetric_gaussian_kl(pred_mu[t], pred_cov[t], centres_mu[s], centres_cov[s])
+            if val < best_dist:
+                best_dist = val
+                best_state = s
+        out[t] = best_state
+    return out
+
+
+def _compact_labels(labels: Array) -> Array:
+    uniques = sorted({int(v) for v in labels.tolist()})
+    remap = {state: idx for idx, state in enumerate(uniques)}
+    return np.asarray([remap[int(v)] for v in labels.tolist()], dtype=int)
+
+
+def _transition_diagnostics(
+    transitions: dict[tuple[int, int], dict[int, float]],
+    sa_counts: dict[tuple[int, int], int],
+) -> tuple[float, float]:
+    if not transitions:
+        return math.nan, math.nan
+    total_w = 0.0
+    unif_total = 0.0
+    branch_total = 0.0
+    for key, dist in transitions.items():
+        if not dist:
+            continue
+        w = float(sa_counts.get(key, 0))
+        if w <= 0.0:
+            continue
+        local_unif = max(dist.values())
+        local_branch = 0.0
+        for p in dist.values():
+            if p > 0.0:
+                local_branch -= p * math.log(p, 2)
+        total_w += w
+        unif_total += w * local_unif
+        branch_total += w * local_branch
+    if total_w <= 0.0:
+        return math.nan, math.nan
+    return float(unif_total / total_w), float(branch_total / total_w)
+
+
+def _variance(values: Sequence[float]) -> float:
+    clean = [float(v) for v in values if math.isfinite(v)]
+    if len(clean) < 2:
+        return 0.0
+    mean_val = float(sum(clean) / len(clean))
+    return float(sum((v - mean_val) ** 2 for v in clean) / (len(clean) - 1))
+
+
+def _mean(values: Sequence[float], *, default: float = math.nan) -> float:
+    clean = [float(v) for v in values if math.isfinite(v)]
+    if not clean:
+        return default
+    return float(sum(clean) / len(clean))
+
+
+def _max(values: Sequence[float], *, default: float = math.nan) -> float:
+    clean = [float(v) for v in values if math.isfinite(v)]
+    if not clean:
+        return default
+    return float(max(clean))
+
+
+def _distance_memory_mb(builder: str, n_pred: int) -> float:
+    mode = _normalise_macro_builder(builder)
+    if mode not in {"hierarchical_single", "hierarchical_complete"}:
+        return 0.0
+    return float((n_pred * n_pred * 8.0) / (1024.0 * 1024.0))
+
+
+def _blocked_resample(y: Array, *, frac: float, min_len: int, seed: int) -> Array:
+    if y.shape[0] <= min_len:
+        return y
+    span = int(round(y.shape[0] * frac))
+    span = max(min_len, min(span, y.shape[0]))
+    if span >= y.shape[0]:
+        return y
+    rng = np.random.default_rng(seed)
+    start = int(rng.integers(0, y.shape[0] - span + 1))
+    return y[start : start + span]
+
+
+@dataclass(frozen=True)
+class MacroBuild:
+    pi: dict[int, float]
+    transitions: dict[tuple[int, int], dict[int, float]]
+    sa_counts: dict[tuple[int, int], int]
+    n_macro_states: int
+    labels: Array
+    pred_mu: Array
+    pred_cov: Array
+    macro_obs: Array
+    quantiser: MacroQuantiser
+    centres_mu: Array
+    centres_cov: Array
+    unifilarity: float
+    branch_entropy: float
+    build_time_s: float
+    distance_matrix_mb_est: float
+    n_pred: int
+
+
 def _build_macro_dynamics(
     y_train: Array,
     iss_model: KalmanISSModel,
@@ -294,13 +520,14 @@ def _build_macro_dynamics(
     eps: float,
     macro_bins: int,
     macro_symboliser: str,
+    macro_builder: str,
     steady_state: bool,
     steady_state_tol: float,
     steady_state_max_iter: int,
     steady_state_ridge: float,
     allow_time_varying_fallback: bool,
     steady_state_solution: SteadyStateKalmanSolution | None,
-) -> tuple[dict[int, float], dict[tuple[int, int], dict[int, float]], dict[tuple[int, int], int], int]:
+) -> MacroBuild:
     if y_train.shape[0] < 3:
         raise ValueError("Need at least 3 training samples to build continuous macro transitions.")
 
@@ -327,13 +554,24 @@ def _build_macro_dynamics(
         pred_mu[t] = (projection @ mu_next).reshape(-1)
         pred_cov[t] = _ensure_spd(projection @ cov_next @ projection.T)
 
-    state_of_t = _reconstruct_macrostates(pred_mu, pred_cov, eps=eps)
+    macro_obs = y_train @ projection.T  # shape (T, d_V)
+    quantiser = _build_quantiser(macro_obs[1:], bins=macro_bins, method=macro_symboliser)
+
+    t0 = time.perf_counter()
+    mode = _normalise_macro_builder(macro_builder)
+    if mode == "linear_quantile":
+        state_of_t = np.zeros(n_pred, dtype=int)
+        for t in range(n_pred):
+            state_of_t[t] = quantiser.symbol(macro_obs[t + 1])
+    else:
+        state_of_t = _reconstruct_macrostates(pred_mu, pred_cov, eps=eps, builder=macro_builder)
+    state_of_t = _compact_labels(state_of_t)
+    build_time = float(time.perf_counter() - t0)
+    mem_mb_est = _distance_memory_mb(macro_builder, n_pred)
+
     occupancy = Counter(int(s) for s in state_of_t.tolist())
     occ_total = sum(occupancy.values()) or 1
     pi = {state: count / occ_total for state, count in occupancy.items()}
-
-    macro_obs = y_train @ projection.T  # shape (T, d_V)
-    quantiser = _build_quantiser(macro_obs[1:], bins=macro_bins, method=macro_symboliser)
 
     trans_counts: dict[tuple[int, int], Counter[int]] = defaultdict(Counter)
     sa_counts: dict[tuple[int, int], int] = {}
@@ -351,7 +589,184 @@ def _build_macro_dynamics(
         transitions[key] = {sp: c / denom for sp, c in ctr.items()}
         sa_counts[key] = int(denom)
 
-    return pi, transitions, sa_counts, len(set(state_of_t.tolist()))
+    centres_mu, centres_cov = _state_prototypes(pred_mu, pred_cov, state_of_t)
+    unif, branch = _transition_diagnostics(transitions, sa_counts)
+    return MacroBuild(
+        pi=pi,
+        transitions=transitions,
+        sa_counts=sa_counts,
+        n_macro_states=len(set(state_of_t.tolist())),
+        labels=state_of_t,
+        pred_mu=pred_mu,
+        pred_cov=pred_cov,
+        macro_obs=macro_obs,
+        quantiser=quantiser,
+        centres_mu=centres_mu,
+        centres_cov=centres_cov,
+        unifilarity=unif,
+        branch_entropy=branch,
+        build_time_s=build_time,
+        distance_matrix_mb_est=mem_mb_est,
+        n_pred=n_pred,
+    )
+
+
+@dataclass(frozen=True)
+class CandidateSpec:
+    projection_mode: str
+    macro_builder: str
+    macro_eps: float
+
+
+@dataclass(frozen=True)
+class CandidateScore:
+    spec: CandidateSpec
+    predictive: float
+    stability: float
+    chosen: float
+    n_states_var: float
+    unifilarity_var: float
+    branch_entropy_var: float
+    n_states_mean: float
+    unifilarity_mean: float
+    branch_entropy_mean: float
+    macro_time_mean_s: float
+    macro_time_max_s: float
+    distance_matrix_mb_est: float
+    n_pred_mean: float
+
+
+def _project_predictors(mu_y: Array, s_y: Array, projection: Array, t_start: int, t_stop: int) -> tuple[Array, Array]:
+    if t_stop < t_start:
+        return (
+            np.zeros((0, projection.shape[0]), dtype=float),
+            np.zeros((0, projection.shape[0], projection.shape[0]), dtype=float),
+        )
+    n = t_stop - t_start + 1
+    out_mu = np.zeros((n, projection.shape[0]), dtype=float)
+    out_cov = np.zeros((n, projection.shape[0], projection.shape[0]), dtype=float)
+    for i, t in enumerate(range(t_start, t_stop + 1)):
+        out_mu[i] = (projection @ mu_y[t + 1]).reshape(-1)
+        out_cov[i] = _ensure_spd(projection @ s_y[t + 1] @ projection.T)
+    return out_mu, out_cov
+
+
+def _macro_validation_nll(
+    y_fit: Array,
+    y_val: Array,
+    iss_model: KalmanISSModel,
+    projection: Array,
+    macro: MacroBuild,
+    *,
+    steady_state: bool,
+    steady_state_tol: float,
+    steady_state_max_iter: int,
+    steady_state_ridge: float,
+    allow_time_varying_fallback: bool,
+    steady_state_solution: SteadyStateKalmanSolution | None,
+) -> float:
+    if y_val.shape[0] < 2:
+        return math.nan
+    y_all = np.vstack([y_fit, y_val])
+    mu_y, s_y, _ = one_step_predictive_y(
+        y_all,
+        iss_model,
+        steady_state=steady_state,
+        steady_state_tol=steady_state_tol,
+        steady_state_max_iter=steady_state_max_iter,
+        steady_state_ridge=steady_state_ridge,
+        steady_state_strict=not allow_time_varying_fallback,
+        allow_time_varying_fallback=allow_time_varying_fallback,
+        steady_state_solution=steady_state_solution,
+    )
+    fit_len = y_fit.shape[0]
+    val_len = y_val.shape[0]
+    t0 = fit_len - 1
+    t1 = fit_len + val_len - 2
+    pred_mu_val, pred_cov_val = _project_predictors(mu_y, s_y, projection, t0, t1)
+    labels_val = _assign_states(pred_mu_val, pred_cov_val, macro.centres_mu, macro.centres_cov)
+    macro_obs_all = y_all @ projection.T
+
+    total = 0.0
+    steps = 0
+    floor = 1e-12
+    for j in range(labels_val.shape[0] - 1):
+        t = t0 + j
+        s_t = int(labels_val[j])
+        s_tp1 = int(labels_val[j + 1])
+        symbol = macro.quantiser.symbol(macro_obs_all[t + 1])
+        row = macro.transitions.get((s_t, symbol))
+        if row is None:
+            prob = 1.0 / max(macro.n_macro_states, 1)
+        else:
+            prob = float(row.get(s_tp1, 0.0))
+            if prob <= 0.0:
+                prob = floor
+        total += -math.log(max(prob, floor))
+        steps += 1
+    if steps == 0:
+        return math.nan
+    return float(total / steps)
+
+
+def _comb2(n: int) -> float:
+    if n < 2:
+        return 0.0
+    return float(n * (n - 1) // 2)
+
+
+def _adjusted_rand_index(labels_a: Array, labels_b: Array) -> float:
+    if labels_a.shape != labels_b.shape:
+        raise ValueError("ARI expects equally sized label arrays.")
+    n = int(labels_a.shape[0])
+    if n < 2:
+        return 1.0
+
+    table: dict[tuple[int, int], int] = defaultdict(int)
+    a_totals: dict[int, int] = defaultdict(int)
+    b_totals: dict[int, int] = defaultdict(int)
+    for a, b in zip(labels_a.tolist(), labels_b.tolist()):
+        ai = int(a)
+        bi = int(b)
+        table[(ai, bi)] += 1
+        a_totals[ai] += 1
+        b_totals[bi] += 1
+
+    index = sum(_comb2(v) for v in table.values())
+    a_sum = sum(_comb2(v) for v in a_totals.values())
+    b_sum = sum(_comb2(v) for v in b_totals.values())
+    pairs = _comb2(n)
+    if pairs <= 0.0:
+        return 1.0
+    expected = (a_sum * b_sum) / pairs
+    max_index = 0.5 * (a_sum + b_sum)
+    denom = max_index - expected
+    if abs(denom) <= 1e-12:
+        return 1.0
+    return float((index - expected) / denom)
+
+
+def _mean_pairwise_ari(label_sets: Sequence[Array]) -> float:
+    if len(label_sets) < 2:
+        return 1.0
+    vals: list[float] = []
+    for i, j in combinations(range(len(label_sets)), 2):
+        vals.append(_adjusted_rand_index(label_sets[i], label_sets[j]))
+    if not vals:
+        return 1.0
+    return float(sum(vals) / len(vals))
+
+
+def _blocked_inner_split(y: Array, *, frac: float, min_fit: int) -> tuple[Array, Array]:
+    if not (0.55 <= frac < 1.0):
+        raise ValueError(f"selection_train_frac must lie in [0.55, 1.0), got {frac}.")
+    n = y.shape[0]
+    split = int(n * frac)
+    split = max(split, min_fit)
+    split = min(split, n - 2)
+    if split < min_fit or (n - split) < 2:
+        raise ValueError("Not enough samples for inner blocked train/validation split.")
+    return y[:split], y[split:]
 
 
 @dataclass(frozen=True)
@@ -367,9 +782,25 @@ class GaussianPredictiveStateModel:
     sa_counts: dict[tuple[int, int], int]
     projection: Array
     projection_mode: str
+    macro_builder: str
     macro_eps: float
     macro_bins: int
     macro_symboliser: str
+    model_selection: bool
+    selection_score: str
+    selection_value: float
+    selection_predictive: float
+    selection_stability: float
+    selection_n_states_var: float
+    selection_unifilarity_var: float
+    selection_branch_entropy_var: float
+    selection_n_states_mean: float
+    selection_unifilarity_mean: float
+    selection_branch_entropy_mean: float
+    selection_macro_time_mean_s: float
+    selection_macro_time_max_s: float
+    selection_distance_matrix_mb_est: float
+    selection_n_pred: float
     iss_mode: str
     allow_time_varying_fallback: bool
     steady_state_tol: float
@@ -382,6 +813,9 @@ class GaussianPredictiveStateModel:
     psi_restarts: int
     psi_iterations: int
     psi_L: Array
+    macro_build_time_s: float
+    macro_distance_matrix_mb_est: float
+    macro_n_pred: int
 
     def _steady_state_enabled(self) -> bool:
         return self.iss_mode == "steady_state"
@@ -453,6 +887,56 @@ class GaussianPredictiveStateModel:
         losses = [_gaussian_nll(y_obs[t], mu_obs[t], s_obs[t]) for t in range(y_obs.shape[0])]
         return float(sum(losses) / len(losses))
 
+    def macro_average_negative_log_likelihood(
+        self,
+        observations: Sequence[Obs] | Array,
+        *,
+        context: Optional[Sequence[Obs] | Array] = None,
+    ) -> float:
+        if context is None:
+            return math.nan
+        y_fit = _to_continuous_matrix(
+            context,
+            name="GaussianPredictiveStateModel.macro_average_negative_log_likelihood",
+            expected_dim=self.obs_dim,
+        )
+        y_obs = _to_continuous_matrix(
+            observations,
+            name="GaussianPredictiveStateModel.macro_average_negative_log_likelihood",
+            expected_dim=self.obs_dim,
+        )
+        if y_fit.shape[0] < 3 or y_obs.shape[0] < 2:
+            return math.nan
+
+        macro = _build_macro_dynamics(
+            y_train=y_fit,
+            iss_model=self.iss,
+            projection=self.projection,
+            eps=self.macro_eps,
+            macro_bins=self.macro_bins,
+            macro_symboliser=self.macro_symboliser,
+            macro_builder=self.macro_builder,
+            steady_state=self._steady_state_enabled(),
+            steady_state_tol=self.steady_state_tol,
+            steady_state_max_iter=self.steady_state_max_iter,
+            steady_state_ridge=self.steady_state_ridge,
+            allow_time_varying_fallback=self.allow_time_varying_fallback,
+            steady_state_solution=self.steady_state_solution,
+        )
+        return _macro_validation_nll(
+            y_fit,
+            y_obs,
+            self.iss,
+            self.projection,
+            macro,
+            steady_state=self._steady_state_enabled(),
+            steady_state_tol=self.steady_state_tol,
+            steady_state_max_iter=self.steady_state_max_iter,
+            steady_state_ridge=self.steady_state_ridge,
+            allow_time_varying_fallback=self.allow_time_varying_fallback,
+            steady_state_solution=self.steady_state_solution,
+        )
+
     def filtered_state_sequence(
         self,
         observations: Sequence[Obs] | Array,
@@ -513,6 +997,7 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
     macro_eps: float = 0.25
     macro_bins: int = 3
     macro_symboliser: str = "quantile"
+    macro_builder: str = "hierarchical_complete"  # greedy | hierarchical_single | hierarchical_complete | linear_quantile
     projection_mode: str = "pca"  # pca | random | psi_opt
     iss_mode: str = "steady_state"  # steady_state | time_varying
     allow_time_varying_fallback: bool = False
@@ -528,6 +1013,21 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
     psi_tol: float = 1e-8
     psi_max_iter: int = 4_000
     psi_ridge: float = 1e-8
+    model_select: bool = False
+    selection_score: str = "predictive"  # predictive | stability
+    selection_train_frac: float = 0.75
+    selection_projection_modes: tuple[str, ...] = ("pca", "random", "psi_opt")
+    selection_macro_builders: tuple[str, ...] = (
+        "hierarchical_single",
+        "hierarchical_complete",
+        "linear_quantile",
+        "greedy",
+    )
+    selection_macro_eps: tuple[float, ...] = ()
+    selection_repeats: int = 4
+    selection_seed_stride: int = 97
+    selection_perturb: str = "seed_blocked"  # seed | blocked | seed_blocked
+    selection_block_frac: float = 0.85
 
     @property
     def name(self) -> str:
@@ -538,8 +1038,7 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
         # Kept for backwards-compatible CSV schema.
         return float(self.macro_eps)
 
-    def _projection(self, y_train: Array, macro_dim: int, seed: int) -> tuple[Array, str]:
-        mode = self.projection_mode
+    def _projection(self, y_train: Array, macro_dim: int, seed: int, *, mode: str) -> tuple[Array, str]:
         if mode == "pca":
             return _projection_pca(y_train, macro_dim), "pca"
         if mode == "random":
@@ -549,44 +1048,13 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
             return _projection_pca(y_train, macro_dim), "psi_opt"
         raise ValueError(f"Unknown projection_mode={mode!r}. Expected 'pca', 'random', or 'psi_opt'.")
 
-    def fit(
+    def _fit_iss(
         self,
-        x_train: Sequence[Obs],
-        rep: Representation,
-        seed: int = 0,
-    ) -> GaussianPredictiveStateModel:
-        if not isinstance(rep, ISSDim):
-            raise TypeError(
-                f"KalmanISSReconstructor expects ISSDim representation, got {type(rep).__name__}."
-            )
-        latent_dim = rep.d
-        macro_dim = rep.dv
-
-        y_train = _to_continuous_matrix(x_train, name="KalmanISSReconstructor.fit")
-        if y_train.shape[1] < macro_dim:
-            raise ValueError(
-                f"macro dimension dv={macro_dim} exceeds observation dimension p={y_train.shape[1]}."
-            )
-        if y_train.shape[0] < max(self.min_train_samples, 5 * latent_dim):
-            raise ValueError(
-                f"Need at least {max(self.min_train_samples, 5 * latent_dim)} training samples for "
-                f"stable ISS fitting with latent_dim={latent_dim}; got {y_train.shape[0]}."
-            )
-        if self.macro_eps < 0.0:
-            raise ValueError("macro_eps must be >= 0.")
-        if self.macro_bins < 1:
-            raise ValueError("macro_bins must be >= 1.")
-        if self.macro_symboliser != "quantile":
-            raise ValueError("macro_symboliser must be 'quantile'.")
-        if self.iss_mode not in {"steady_state", "time_varying"}:
-            raise ValueError("iss_mode must be 'steady_state' or 'time_varying'.")
-        if self.steady_state_tol <= 0.0:
-            raise ValueError("steady_state_tol must be > 0.")
-        if self.steady_state_max_iter < 1:
-            raise ValueError("steady_state_max_iter must be >= 1.")
-        if self.steady_state_ridge < 0.0:
-            raise ValueError("steady_state_ridge must be >= 0.")
-
+        y_train: Array,
+        *,
+        latent_dim: int,
+        seed: int,
+    ) -> tuple[KalmanISSModel, bool, Optional[SteadyStateKalmanSolution], float]:
         cfg = KalmanISSConfig(
             latent_dim=latent_dim,
             em_iters=self.em_iters,
@@ -622,8 +1090,18 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
         )
         train_losses = [_gaussian_nll(y_train[t], mu_train[t], s_train[t]) for t in range(y_train.shape[0])]
         avg_train_nll = float(sum(train_losses) / len(train_losses))
+        return iss_model, steady_state_enabled, steady_state_solution, avg_train_nll
 
-        projection, projection_label = self._projection(y_train, macro_dim=macro_dim, seed=seed)
+    def _projection_with_psi(
+        self,
+        y_train: Array,
+        iss_model: KalmanISSModel,
+        *,
+        macro_dim: int,
+        seed: int,
+        mode: str,
+    ) -> tuple[Array, str, float, str, int, int, Array]:
+        projection, projection_label = self._projection(y_train, macro_dim=macro_dim, seed=seed, mode=mode)
         innovations = innovations_from_ssm(
             iss_model,
             tol=self.psi_tol,
@@ -643,7 +1121,7 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
         psi_iterations = 1
         psi_L = projection.copy()
 
-        should_optimise_psi = self.compute_psi or self.projection_mode == "psi_opt"
+        should_optimise_psi = self.compute_psi or mode == "psi_opt"
         if should_optimise_psi:
             try:
                 psi_result = optimise_ss_psi(
@@ -677,14 +1155,315 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
                 psi_restarts = 1
                 psi_iterations = 1
                 psi_L = projection.copy()
+        return projection, projection_label, float(psi_opt), psi_optimiser, psi_restarts, psi_iterations, psi_L
 
-        pi, transitions, sa_counts, n_macro_states = _build_macro_dynamics(
+    def _candidate_specs(self) -> list[CandidateSpec]:
+        if not self.model_select:
+            return [
+                CandidateSpec(
+                    self.projection_mode,
+                    _normalise_macro_builder(self.macro_builder),
+                    self.macro_eps,
+                )
+            ]
+        eps_values = self.selection_macro_eps if self.selection_macro_eps else (self.macro_eps,)
+        specs: list[CandidateSpec] = []
+        seen: set[tuple[str, str, float]] = set()
+        for mode in self.selection_projection_modes:
+            for builder in self.selection_macro_builders:
+                norm_builder = _normalise_macro_builder(builder)
+                for eps in eps_values:
+                    key = (mode, norm_builder, float(eps))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    specs.append(CandidateSpec(mode, norm_builder, float(eps)))
+        if not specs:
+            raise ValueError("Model selection requested but no candidate configurations were provided.")
+        return specs
+
+    def _normalise_scores(self, score: CandidateScore) -> tuple[float, float]:
+        pred = score.predictive if math.isfinite(score.predictive) else math.inf
+        stab = score.stability if math.isfinite(score.stability) else -math.inf
+        return pred, stab
+
+    def _select_candidate(
+        self,
+        y_train: Array,
+        *,
+        latent_dim: int,
+        macro_dim: int,
+        seed: int,
+    ) -> CandidateScore:
+        y_fit, y_val = _blocked_inner_split(
+            y_train,
+            frac=self.selection_train_frac,
+            min_fit=max(self.min_train_samples, 5 * latent_dim),
+        )
+        specs = self._candidate_specs()
+        repeats = max(1, self.selection_repeats)
+        if self.selection_score == "stability":
+            repeats = max(2, repeats)
+        use_seed = self.selection_perturb in {"seed", "seed_blocked"}
+        use_blocked = self.selection_perturb in {"blocked", "seed_blocked"}
+        fit_floor = max(3, min(y_fit.shape[0], max(self.min_train_samples, 5 * latent_dim)))
+
+        scored: list[CandidateScore] = []
+        for spec in specs:
+            labels: list[Array] = []
+            pred_vals: list[float] = []
+            n_states_vals: list[float] = []
+            unif_vals: list[float] = []
+            branch_vals: list[float] = []
+            macro_times: list[float] = []
+            mem_vals: list[float] = []
+            n_pred_vals: list[float] = []
+
+            for r in range(repeats):
+                run_seed = seed + r * self.selection_seed_stride if use_seed else seed
+                y_fit_run = y_fit
+                if use_blocked:
+                    y_fit_run = _blocked_resample(
+                        y_fit,
+                        frac=self.selection_block_frac,
+                        min_len=fit_floor,
+                        seed=seed + r * self.selection_seed_stride + 123_978,
+                    )
+                iss_model, steady_state_enabled, steady_state_solution, _ = self._fit_iss(
+                    y_fit_run,
+                    latent_dim=latent_dim,
+                    seed=run_seed,
+                )
+                projection, _, _, _, _, _, _ = self._projection_with_psi(
+                    y_fit_run,
+                    iss_model,
+                    macro_dim=macro_dim,
+                    seed=run_seed,
+                    mode=spec.projection_mode,
+                )
+                macro = _build_macro_dynamics(
+                    y_train=y_fit_run,
+                    iss_model=iss_model,
+                    projection=projection,
+                    eps=spec.macro_eps,
+                    macro_bins=self.macro_bins,
+                    macro_symboliser=self.macro_symboliser,
+                    macro_builder=spec.macro_builder,
+                    steady_state=steady_state_enabled,
+                    steady_state_tol=self.steady_state_tol,
+                    steady_state_max_iter=self.steady_state_max_iter,
+                    steady_state_ridge=self.steady_state_ridge,
+                    allow_time_varying_fallback=self.allow_time_varying_fallback,
+                    steady_state_solution=steady_state_solution,
+                )
+                mu_fit, s_fit, _ = one_step_predictive_y(
+                    y_fit,
+                    iss_model,
+                    steady_state=steady_state_enabled,
+                    steady_state_tol=self.steady_state_tol,
+                    steady_state_max_iter=self.steady_state_max_iter,
+                    steady_state_ridge=self.steady_state_ridge,
+                    steady_state_strict=not self.allow_time_varying_fallback,
+                    allow_time_varying_fallback=self.allow_time_varying_fallback,
+                    steady_state_solution=steady_state_solution,
+                )
+                ref_mu, ref_cov = _project_predictors(mu_fit, s_fit, projection, 0, y_fit.shape[0] - 2)
+                labels.append(_assign_states(ref_mu, ref_cov, macro.centres_mu, macro.centres_cov))
+                pred_nll = _macro_validation_nll(
+                    y_fit,
+                    y_val,
+                    iss_model,
+                    projection,
+                    macro,
+                    steady_state=steady_state_enabled,
+                    steady_state_tol=self.steady_state_tol,
+                    steady_state_max_iter=self.steady_state_max_iter,
+                    steady_state_ridge=self.steady_state_ridge,
+                    allow_time_varying_fallback=self.allow_time_varying_fallback,
+                    steady_state_solution=steady_state_solution,
+                )
+                if math.isfinite(pred_nll):
+                    pred_vals.append(pred_nll)
+                n_states_vals.append(float(macro.n_macro_states))
+                unif_vals.append(float(macro.unifilarity))
+                branch_vals.append(float(macro.branch_entropy))
+                macro_times.append(float(macro.build_time_s))
+                mem_vals.append(float(macro.distance_matrix_mb_est))
+                n_pred_vals.append(float(macro.n_pred))
+
+            predictive = _mean(pred_vals, default=math.inf)
+            if not math.isfinite(predictive):
+                predictive = math.inf
+            stability = _mean_pairwise_ari(labels)
+            if not math.isfinite(stability):
+                stability = -math.inf
+            chosen = predictive if self.selection_score == "predictive" else stability
+            scored.append(
+                CandidateScore(
+                    spec=spec,
+                    predictive=predictive,
+                    stability=stability,
+                    chosen=chosen,
+                    n_states_var=_variance(n_states_vals),
+                    unifilarity_var=_variance(unif_vals),
+                    branch_entropy_var=_variance(branch_vals),
+                    n_states_mean=_mean(n_states_vals),
+                    unifilarity_mean=_mean(unif_vals),
+                    branch_entropy_mean=_mean(branch_vals),
+                    macro_time_mean_s=_mean(macro_times),
+                    macro_time_max_s=_max(macro_times),
+                    distance_matrix_mb_est=_max(mem_vals, default=0.0),
+                    n_pred_mean=_mean(n_pred_vals),
+                )
+            )
+
+        if self.selection_score == "predictive":
+            return min(
+                scored,
+                key=lambda row: (
+                    self._normalise_scores(row)[0],
+                    -self._normalise_scores(row)[1],
+                    row.n_states_var + row.unifilarity_var + row.branch_entropy_var,
+                    row.macro_time_mean_s if math.isfinite(row.macro_time_mean_s) else math.inf,
+                    row.distance_matrix_mb_est if math.isfinite(row.distance_matrix_mb_est) else math.inf,
+                ),
+            )
+        return min(
+            scored,
+            key=lambda row: (
+                -self._normalise_scores(row)[1],
+                row.n_states_var + row.unifilarity_var + row.branch_entropy_var,
+                self._normalise_scores(row)[0],
+                row.macro_time_mean_s if math.isfinite(row.macro_time_mean_s) else math.inf,
+                row.distance_matrix_mb_est if math.isfinite(row.distance_matrix_mb_est) else math.inf,
+            ),
+        )
+
+    def fit(
+        self,
+        x_train: Sequence[Obs],
+        rep: Representation,
+        seed: int = 0,
+    ) -> GaussianPredictiveStateModel:
+        if not isinstance(rep, ISSDim):
+            raise TypeError(
+                f"KalmanISSReconstructor expects ISSDim representation, got {type(rep).__name__}."
+            )
+        latent_dim = rep.d
+        macro_dim = rep.dv
+
+        y_train = _to_continuous_matrix(x_train, name="KalmanISSReconstructor.fit")
+        if y_train.shape[1] < macro_dim:
+            raise ValueError(
+                f"macro dimension dv={macro_dim} exceeds observation dimension p={y_train.shape[1]}."
+            )
+        if y_train.shape[0] < max(self.min_train_samples, 5 * latent_dim):
+            raise ValueError(
+                f"Need at least {max(self.min_train_samples, 5 * latent_dim)} training samples for "
+                f"stable ISS fitting with latent_dim={latent_dim}; got {y_train.shape[0]}."
+            )
+        if self.macro_eps < 0.0:
+            raise ValueError("macro_eps must be >= 0.")
+        if self.macro_bins < 1:
+            raise ValueError("macro_bins must be >= 1.")
+        if self.macro_symboliser != "quantile":
+            raise ValueError("macro_symboliser must be 'quantile'.")
+        if not _valid_macro_builder(self.macro_builder):
+            raise ValueError(
+                "macro_builder must be one of 'greedy', 'hierarchical_single', "
+                "'hierarchical_complete', or 'linear_quantile' (global aliases are accepted)."
+            )
+        if self.iss_mode not in {"steady_state", "time_varying"}:
+            raise ValueError("iss_mode must be 'steady_state' or 'time_varying'.")
+        if self.steady_state_tol <= 0.0:
+            raise ValueError("steady_state_tol must be > 0.")
+        if self.steady_state_max_iter < 1:
+            raise ValueError("steady_state_max_iter must be >= 1.")
+        if self.steady_state_ridge < 0.0:
+            raise ValueError("steady_state_ridge must be >= 0.")
+        if self.projection_mode not in {"pca", "random", "psi_opt"}:
+            raise ValueError("projection_mode must be 'pca', 'random', or 'psi_opt'.")
+        if self.selection_score not in {"predictive", "stability"}:
+            raise ValueError("selection_score must be 'predictive' or 'stability'.")
+        if self.selection_repeats < 1:
+            raise ValueError("selection_repeats must be >= 1.")
+        if self.selection_seed_stride < 1:
+            raise ValueError("selection_seed_stride must be >= 1.")
+        if self.selection_perturb not in {"seed", "blocked", "seed_blocked"}:
+            raise ValueError("selection_perturb must be 'seed', 'blocked', or 'seed_blocked'.")
+        if not (0.55 <= self.selection_block_frac <= 1.0):
+            raise ValueError("selection_block_frac must lie in [0.55, 1.0].")
+        for mode in self.selection_projection_modes:
+            if mode not in {"pca", "random", "psi_opt"}:
+                raise ValueError(f"Unknown mode in selection_projection_modes: {mode!r}.")
+        for builder in self.selection_macro_builders:
+            if not _valid_macro_builder(builder):
+                raise ValueError(f"Unknown builder in selection_macro_builders: {builder!r}.")
+        for eps in self.selection_macro_eps:
+            if eps < 0.0:
+                raise ValueError("selection_macro_eps entries must be >= 0.")
+
+        if self.model_select:
+            picked = self._select_candidate(
+                y_train,
+                latent_dim=latent_dim,
+                macro_dim=macro_dim,
+                seed=seed,
+            )
+            chosen = picked.spec
+            picked_predictive = picked.predictive
+            picked_stability = picked.stability
+            picked_value = picked.chosen
+            picked_n_states_var = picked.n_states_var
+            picked_unif_var = picked.unifilarity_var
+            picked_branch_var = picked.branch_entropy_var
+            picked_n_states_mean = picked.n_states_mean
+            picked_unif_mean = picked.unifilarity_mean
+            picked_branch_mean = picked.branch_entropy_mean
+            picked_macro_time_mean = picked.macro_time_mean_s
+            picked_macro_time_max = picked.macro_time_max_s
+            picked_dist_mb = picked.distance_matrix_mb_est
+            picked_n_pred = picked.n_pred_mean
+        else:
+            chosen = CandidateSpec(
+                projection_mode=self.projection_mode,
+                macro_builder=_normalise_macro_builder(self.macro_builder),
+                macro_eps=self.macro_eps,
+            )
+            picked_predictive = math.nan
+            picked_stability = math.nan
+            picked_value = math.nan
+            picked_n_states_var = math.nan
+            picked_unif_var = math.nan
+            picked_branch_var = math.nan
+            picked_n_states_mean = math.nan
+            picked_unif_mean = math.nan
+            picked_branch_mean = math.nan
+            picked_macro_time_mean = math.nan
+            picked_macro_time_max = math.nan
+            picked_dist_mb = math.nan
+            picked_n_pred = math.nan
+
+        iss_model, steady_state_enabled, steady_state_solution, avg_train_nll = self._fit_iss(
+            y_train,
+            latent_dim=latent_dim,
+            seed=seed,
+        )
+        projection, projection_label, psi_opt, psi_optimiser, psi_restarts, psi_iterations, psi_L = self._projection_with_psi(
+            y_train,
+            iss_model,
+            macro_dim=macro_dim,
+            seed=seed,
+            mode=chosen.projection_mode,
+        )
+        macro = _build_macro_dynamics(
             y_train=y_train,
             iss_model=iss_model,
             projection=projection,
-            eps=self.macro_eps,
+            eps=chosen.macro_eps,
             macro_bins=self.macro_bins,
             macro_symboliser=self.macro_symboliser,
+            macro_builder=chosen.macro_builder,
             steady_state=steady_state_enabled,
             steady_state_tol=self.steady_state_tol,
             steady_state_max_iter=self.steady_state_max_iter,
@@ -698,16 +1477,32 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
             latent_dim=latent_dim,
             obs_dim=y_train.shape[1],
             macro_dim=macro_dim,
-            n_macro_states=n_macro_states,
+            n_macro_states=macro.n_macro_states,
             train_avg_nll=avg_train_nll,
-            pi=pi,
-            transitions=transitions,
-            sa_counts=sa_counts,
+            pi=macro.pi,
+            transitions=macro.transitions,
+            sa_counts=macro.sa_counts,
             projection=projection,
             projection_mode=projection_label,
-            macro_eps=self.macro_eps,
+            macro_builder=chosen.macro_builder,
+            macro_eps=chosen.macro_eps,
             macro_bins=self.macro_bins,
             macro_symboliser=self.macro_symboliser,
+            model_selection=self.model_select,
+            selection_score=self.selection_score,
+            selection_value=float(picked_value),
+            selection_predictive=float(picked_predictive),
+            selection_stability=float(picked_stability),
+            selection_n_states_var=float(picked_n_states_var),
+            selection_unifilarity_var=float(picked_unif_var),
+            selection_branch_entropy_var=float(picked_branch_var),
+            selection_n_states_mean=float(picked_n_states_mean),
+            selection_unifilarity_mean=float(picked_unif_mean),
+            selection_branch_entropy_mean=float(picked_branch_mean),
+            selection_macro_time_mean_s=float(picked_macro_time_mean),
+            selection_macro_time_max_s=float(picked_macro_time_max),
+            selection_distance_matrix_mb_est=float(picked_dist_mb),
+            selection_n_pred=float(picked_n_pred),
             iss_mode="steady_state" if steady_state_enabled else "time_varying",
             allow_time_varying_fallback=self.allow_time_varying_fallback,
             steady_state_tol=self.steady_state_tol,
@@ -720,4 +1515,7 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
             psi_restarts=psi_restarts,
             psi_iterations=psi_iterations,
             psi_L=psi_L,
+            macro_build_time_s=float(macro.build_time_s),
+            macro_distance_matrix_mb_est=float(macro.distance_matrix_mb_est),
+            macro_n_pred=int(macro.n_pred),
         )
