@@ -1,0 +1,64 @@
+{
+  "condition_id_style": "flip_sub",
+  "data_column": null,
+  "data_columns": null,
+  "data_path": null,
+  "dvs": [
+    3
+  ],
+  "eps": 0.2,
+  "flip_ps": [
+    0.0
+  ],
+  "kalman_iss": {
+    "allow_time_varying_fallback": false,
+    "compute_psi": true,
+    "em_iters": 40,
+    "em_ridge": 1e-06,
+    "em_tol": 0.0001,
+    "iss_mode": "steady_state",
+    "macro_bins": 5,
+    "macro_eps": 0.2,
+    "macro_projection": "psi_opt",
+    "macro_symboliser": "quantile",
+    "psi_iterations": 40,
+    "psi_lr": 0.03,
+    "psi_max_iter": 4000,
+    "psi_optimiser": "random",
+    "psi_restarts": 4,
+    "psi_ridge": 1e-08,
+    "psi_step_scale": 0.2,
+    "psi_tol": 1e-08,
+    "steady_state_max_iter": 10000,
+    "steady_state_ridge": 1e-09,
+    "steady_state_tol": 1e-09
+  },
+  "length": 7000,
+  "linear_gaussian_ssm": {
+    "a": 0.96,
+    "c": 1.0,
+    "coupling_std": 0.22,
+    "init_std": 1.0,
+    "latent_dim": 8,
+    "obs_dim": 14,
+    "obs_std": 0.4,
+    "process_std": 0.55
+  },
+  "noise_seed": null,
+  "noisy_representation": false,
+  "process": "linear_gaussian_ssm",
+  "reconstructor": "kalman_iss",
+  "representations": [
+    "iss_d8_dv3"
+  ],
+  "save_transitions": false,
+  "seeds": [
+    0,
+    1
+  ],
+  "subsample_steps": [
+    1
+  ],
+  "train_frac": 0.8,
+  "transitions_rep_name": null
+}
