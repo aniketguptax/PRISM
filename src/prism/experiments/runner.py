@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Sequence
 
 from prism.metrics import log_loss_with_context, n_states, statistical_complexity, unifilarity_score
 from prism.metrics.branching import mean_branching_entropy_weighted
-from prism.metrics.gaussian_predictive import gaussian_log_loss
+from prism.metrics.gaussian_predictive import gaussian_log_loss, macro_predictive_log_loss
 from prism.metrics.graph import DotStyle, dot_to_png, save_dot, to_dot, to_edge_list
 from prism.processes.protocols import Process
 from prism.reconstruction.kalman_iss import GaussianPredictiveStateModel
@@ -63,6 +63,7 @@ def _discrete_metrics(
         return {
             "logloss": math.nan,
             "gaussian_logloss": math.nan,
+            "macro_logloss": math.nan,
             "n_states": math.nan,
             "C_mu_empirical": math.nan,
             "unifilarity_score": math.nan,
@@ -73,11 +74,30 @@ def _discrete_metrics(
             "macro_dim": math.nan,
             "obs_dim": math.nan,
             "projection_mode": "",
+            "macro_builder": "",
             "macro_eps": math.nan,
             "macro_bins": math.nan,
             "macro_symboliser": "",
+            "model_selection": False,
+            "selection_score": "",
+            "selection_value": math.nan,
+            "selection_predictive": math.nan,
+            "selection_stability": math.nan,
+            "selection_n_states_var": math.nan,
+            "selection_unifilarity_var": math.nan,
+            "selection_branch_entropy_var": math.nan,
+            "selection_n_states_mean": math.nan,
+            "selection_unifilarity_mean": math.nan,
+            "selection_branch_entropy_mean": math.nan,
+            "selection_macro_time_mean_s": math.nan,
+            "selection_macro_time_max_s": math.nan,
+            "selection_distance_matrix_mb_est": math.nan,
+            "selection_n_pred": math.nan,
             "latent_dim": math.nan,
             "iss_mode": "",
+            "macro_build_time_s": math.nan,
+            "macro_distance_matrix_mb_est": math.nan,
+            "macro_n_pred": math.nan,
         }
 
     # Fit is train-only. Held-out evaluation uses train context solely to build
@@ -102,6 +122,7 @@ def _discrete_metrics(
     return {
         "logloss": logloss,
         "gaussian_logloss": math.nan,
+        "macro_logloss": math.nan,
         "n_states": float(n_states(model)),
         "C_mu_empirical": complexity,
         "unifilarity_score": unif,
@@ -112,11 +133,30 @@ def _discrete_metrics(
         "macro_dim": math.nan,
         "obs_dim": math.nan,
         "projection_mode": "",
+        "macro_builder": "",
         "macro_eps": math.nan,
         "macro_bins": math.nan,
         "macro_symboliser": "",
+        "model_selection": False,
+        "selection_score": "",
+        "selection_value": math.nan,
+        "selection_predictive": math.nan,
+        "selection_stability": math.nan,
+        "selection_n_states_var": math.nan,
+        "selection_unifilarity_var": math.nan,
+        "selection_branch_entropy_var": math.nan,
+        "selection_n_states_mean": math.nan,
+        "selection_unifilarity_mean": math.nan,
+        "selection_branch_entropy_mean": math.nan,
+        "selection_macro_time_mean_s": math.nan,
+        "selection_macro_time_max_s": math.nan,
+        "selection_distance_matrix_mb_est": math.nan,
+        "selection_n_pred": math.nan,
         "latent_dim": math.nan,
         "iss_mode": "",
+        "macro_build_time_s": math.nan,
+        "macro_distance_matrix_mb_est": math.nan,
+        "macro_n_pred": math.nan,
     }
 
 
@@ -126,8 +166,11 @@ def _continuous_metrics(
     model: GaussianPredictiveStateModel,
 ) -> Dict[str, Any]:
     heldout_nll = gaussian_log_loss(x_test, model, context=x_train)
+    macro_nll = macro_predictive_log_loss(x_test, model, context=x_train)
     if math.isnan(heldout_nll):
         LOGGER.warning("Gaussian log-loss undefined for continuous run; setting to NaN.")
+    if math.isnan(macro_nll):
+        LOGGER.warning("Macro predictive log-loss undefined for continuous run; setting to NaN.")
 
     complexity = statistical_complexity(model) if model.pi else math.nan
     if not model.pi:
@@ -144,6 +187,7 @@ def _continuous_metrics(
     return {
         "logloss": heldout_nll,
         "gaussian_logloss": heldout_nll,
+        "macro_logloss": macro_nll,
         "n_states": float(n_states(model)) if model.n_macro_states > 0 else math.nan,
         "C_mu_empirical": complexity,
         "unifilarity_score": unif,
@@ -154,11 +198,30 @@ def _continuous_metrics(
         "macro_dim": model.macro_dim,
         "obs_dim": model.obs_dim,
         "projection_mode": model.projection_mode,
+        "macro_builder": model.macro_builder,
         "macro_eps": model.macro_eps,
         "macro_bins": model.macro_bins,
         "macro_symboliser": model.macro_symboliser,
+        "model_selection": model.model_selection,
+        "selection_score": model.selection_score,
+        "selection_value": model.selection_value,
+        "selection_predictive": model.selection_predictive,
+        "selection_stability": model.selection_stability,
+        "selection_n_states_var": model.selection_n_states_var,
+        "selection_unifilarity_var": model.selection_unifilarity_var,
+        "selection_branch_entropy_var": model.selection_branch_entropy_var,
+        "selection_n_states_mean": model.selection_n_states_mean,
+        "selection_unifilarity_mean": model.selection_unifilarity_mean,
+        "selection_branch_entropy_mean": model.selection_branch_entropy_mean,
+        "selection_macro_time_mean_s": model.selection_macro_time_mean_s,
+        "selection_macro_time_max_s": model.selection_macro_time_max_s,
+        "selection_distance_matrix_mb_est": model.selection_distance_matrix_mb_est,
+        "selection_n_pred": model.selection_n_pred,
         "latent_dim": model.latent_dim,
         "iss_mode": model.iss_mode,
+        "macro_build_time_s": model.macro_build_time_s,
+        "macro_distance_matrix_mb_est": model.macro_distance_matrix_mb_est,
+        "macro_n_pred": model.macro_n_pred,
     }
 
 
@@ -194,6 +257,7 @@ def run_experiment(
         "reconstructor",
         "logloss",
         "gaussian_logloss",
+        "macro_logloss",
         "n_states",
         "C_mu_empirical",
         "unifilarity_score",
@@ -204,11 +268,30 @@ def run_experiment(
         "macro_dim",
         "obs_dim",
         "projection_mode",
+        "macro_builder",
         "macro_eps",
         "macro_bins",
         "macro_symboliser",
+        "model_selection",
+        "selection_score",
+        "selection_value",
+        "selection_predictive",
+        "selection_stability",
+        "selection_n_states_var",
+        "selection_unifilarity_var",
+        "selection_branch_entropy_var",
+        "selection_n_states_mean",
+        "selection_unifilarity_mean",
+        "selection_branch_entropy_mean",
+        "selection_macro_time_mean_s",
+        "selection_macro_time_max_s",
+        "selection_distance_matrix_mb_est",
+        "selection_n_pred",
         "latent_dim",
         "iss_mode",
+        "macro_build_time_s",
+        "macro_distance_matrix_mb_est",
+        "macro_n_pred",
         "model_valid",
         "invalid_reason",
     ]

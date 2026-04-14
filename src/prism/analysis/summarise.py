@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 DEFAULT_METRICS = [
     "logloss",
     "gaussian_logloss",
+    "macro_logloss",
     "n_states",
     "C_mu_empirical",
     "unifilarity_score",
@@ -124,6 +125,8 @@ def summarise(run_root: Path) -> None:
         "logloss_std",
         "gaussian_logloss_mean",
         "gaussian_logloss_std",
+        "macro_logloss_mean",
+        "macro_logloss_std",
         "n_states_mean",
         "n_states_std",
         "C_mu_empirical_mean",
