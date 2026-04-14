@@ -14,3 +14,13 @@ def gaussian_log_loss(
 ) -> float:
     """Average one-step Gaussian negative log-likelihood on `x`."""
     return model.average_negative_log_likelihood(x, context=context)
+
+
+def macro_predictive_log_loss(
+    x: Sequence[Obs],
+    model: GaussianPredictiveStateModel,
+    *,
+    context: Optional[Sequence[Obs]] = None,
+) -> float:
+    """Average macro predictive negative log-likelihood on `x`."""
+    return model.macro_average_negative_log_likelihood(x, context=context)
