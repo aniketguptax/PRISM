@@ -121,6 +121,7 @@ def test_continuous_cli_sweep_d_and_dv(tmp_path: Path) -> None:
     for row in rows:
         for metric in (
             "gaussian_logloss",
+            "macro_logloss",
             "C_mu_empirical",
             "unifilarity_score",
             "branch_entropy",

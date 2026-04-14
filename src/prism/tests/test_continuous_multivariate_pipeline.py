@@ -48,6 +48,7 @@ def test_continuous_runner_sweeps_d_and_dv(tmp_path: Path) -> None:
         assert row["reconstructor"] == "kalman_iss"
         assert _is_finite(row["logloss"])
         assert _is_finite(row["gaussian_logloss"])
+        assert _is_finite(row["macro_logloss"])
         assert _is_finite(row["n_states"])
         assert _is_finite(row["C_mu_empirical"])
         assert _is_finite(row["unifilarity_score"])
