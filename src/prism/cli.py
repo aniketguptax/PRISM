@@ -88,6 +88,22 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--macro-eps", type=float, default=0.25, help="Tolerance for continuous macrostate reconstruction.")
     parser.add_argument("--macro-bins", type=int, default=3, help="Quantile bins per macro dimension for transition symbols.")
     parser.add_argument(
+        "--macro-builder",
+        type=str,
+        choices=[
+            "greedy",
+            "hierarchical_single",
+            "hierarchical_complete",
+            "linear_quantile",
+            "global",
+            "global_single",
+            "global_complete",
+            "linear",
+        ],
+        default="hierarchical_complete",
+        help="Macrostate clustering rule for continuous runs.",
+    )
+    parser.add_argument(
         "--macro-symboliser",
         type=str,
         choices=["quantile"],
@@ -107,6 +123,67 @@ def _parse_args() -> argparse.Namespace:
         choices=["steady_state", "time_varying"],
         default="steady_state",
         help="Filtering mode used for ISS predictions.",
+    )
+    parser.add_argument("--model-select", action="store_true", help="Use blocked CV to select projection/builder/epsilon candidates.")
+    parser.add_argument(
+        "--selection-score",
+        type=str,
+        choices=["predictive", "stability"],
+        default="predictive",
+        help="Objective used when --model-select is enabled.",
+    )
+    parser.add_argument(
+        "--selection-train-frac",
+        type=float,
+        default=0.75,
+        help="Inner blocked train fraction used for model selection.",
+    )
+    parser.add_argument(
+        "--selection-projections",
+        nargs="+",
+        type=str,
+        choices=["pca", "random", "psi_opt"],
+        default=["pca", "random", "psi_opt"],
+        help="Projection modes considered during model selection.",
+    )
+    parser.add_argument(
+        "--selection-builders",
+        nargs="+",
+        type=str,
+        choices=[
+            "greedy",
+            "hierarchical_single",
+            "hierarchical_complete",
+            "linear_quantile",
+            "global",
+            "global_single",
+            "global_complete",
+            "linear",
+        ],
+        default=["hierarchical_single", "hierarchical_complete", "linear_quantile", "greedy"],
+        help="Macro builders considered during model selection.",
+    )
+    parser.add_argument(
+        "--selection-macro-eps",
+        nargs="+",
+        type=float,
+        default=None,
+        help="Optional epsilon grid for model selection.",
+    )
+    parser.add_argument("--selection-repeats", type=int, default=4, help="Number of repeated fits for stability scoring.")
+    parser.add_argument("--selection-seed-stride", type=int, default=97, help="Seed offset between selection repeats.")
+    parser.add_argument(
+        "--selection-perturb",
+        type=str,
+        choices=["seed", "blocked", "seed_blocked"],
+        default="seed_blocked",
+        help="Perturbation family used in selection repeats.",
+    )
+    parser.add_argument(
+        "--selection-block-frac",
+        type=float,
+        default=0.85,
+        help="Blocked-resample fraction for model-selection perturbations.",
     )
     parser.add_argument(
         "--allow-time-varying-fallback",
@@ -239,6 +316,8 @@ def main() -> None:
         raise ValueError("--noisy is only valid for discrete LastK representations.")
     if args.compute_psi and args.reconstructor != "kalman_iss":
         raise ValueError("--compute-psi is only supported with --reconstructor kalman_iss.")
+    if args.model_select and args.reconstructor != "kalman_iss":
+        raise ValueError("--model-select is only supported with --reconstructor kalman_iss.")
     if args.psi_restarts < 1:
         raise ValueError("--psi-restarts must be >= 1.")
     if args.psi_iters < 1:
@@ -259,6 +338,16 @@ def main() -> None:
         raise ValueError("--steady-state-max-iter must be >= 1.")
     if args.steady_state_ridge < 0.0:
         raise ValueError("--steady-state-ridge must be >= 0.")
+    if not (0.55 <= args.selection_train_frac < 1.0):
+        raise ValueError("--selection-train-frac must lie in [0.55, 1.0).")
+    if args.selection_repeats < 1:
+        raise ValueError("--selection-repeats must be >= 1.")
+    if args.selection_seed_stride < 1:
+        raise ValueError("--selection-seed-stride must be >= 1.")
+    if not (0.55 <= args.selection_block_frac <= 1.0):
+        raise ValueError("--selection-block-frac must lie in [0.55, 1.0].")
+    if args.selection_macro_eps is not None and any(eps < 0.0 for eps in args.selection_macro_eps):
+        raise ValueError("All --selection-macro-eps values must be >= 0.")
 
     args.outdir = _make_outdir(
         base=args.outdir,
@@ -284,6 +373,7 @@ def main() -> None:
             em_ridge=args.em_ridge,
             macro_eps=args.macro_eps,
             macro_bins=args.macro_bins,
+            macro_builder=args.macro_builder,
             macro_symboliser=args.macro_symboliser,
             projection_mode=args.macro_projection,
             iss_mode=args.iss_mode,
@@ -300,6 +390,16 @@ def main() -> None:
             psi_tol=args.psi_tol,
             psi_max_iter=args.psi_max_iter,
             psi_ridge=args.psi_ridge,
+            model_select=args.model_select,
+            selection_score=args.selection_score,
+            selection_train_frac=args.selection_train_frac,
+            selection_projection_modes=tuple(args.selection_projections),
+            selection_macro_builders=tuple(args.selection_builders),
+            selection_macro_eps=tuple(args.selection_macro_eps) if args.selection_macro_eps is not None else (),
+            selection_repeats=args.selection_repeats,
+            selection_seed_stride=args.selection_seed_stride,
+            selection_perturb=args.selection_perturb,
+            selection_block_frac=args.selection_block_frac,
         )
     else:
         reconstructor = RECONSTRUCTOR_REGISTRY[args.reconstructor](eps=args.eps)
@@ -341,6 +441,7 @@ def main() -> None:
             "em_ridge": args.em_ridge,
             "macro_eps": args.macro_eps,
             "macro_bins": args.macro_bins,
+            "macro_builder": args.macro_builder,
             "macro_symboliser": args.macro_symboliser,
             "macro_projection": args.macro_projection,
             "iss_mode": args.iss_mode,
@@ -357,6 +458,16 @@ def main() -> None:
             "psi_tol": args.psi_tol,
             "psi_max_iter": args.psi_max_iter,
             "psi_ridge": args.psi_ridge,
+            "model_select": args.model_select,
+            "selection_score": args.selection_score,
+            "selection_train_frac": args.selection_train_frac,
+            "selection_projections": args.selection_projections,
+            "selection_builders": args.selection_builders,
+            "selection_macro_eps": args.selection_macro_eps,
+            "selection_repeats": args.selection_repeats,
+            "selection_seed_stride": args.selection_seed_stride,
+            "selection_perturb": args.selection_perturb,
+            "selection_block_frac": args.selection_block_frac,
         }
         if args.reconstructor == "kalman_iss"
         else None,
