@@ -1,7 +1,9 @@
 # Core numerics / analysis
 numpy<2
 pandas>=1.5,<3
+scipy>=1.10,<2
 matplotlib>=3.6,<4
+h5py>=3.8,<4
 torch>=2.0,<3
 
 # Frontend
