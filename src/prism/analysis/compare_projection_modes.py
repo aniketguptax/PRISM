@@ -12,26 +12,13 @@ from prism.analysis.continuous_common import (
     finite_min_max,
     metric_column,
     mode_matrix,
+    normalise_output_formats,
     read_rows,
 )
 
 
 DEFAULT_MODES = ["pca", "random", "psi_opt"]
 DEFAULT_METRICS = ["gaussian_logloss", "n_states", "C_mu_empirical", "psi_opt"]
-
-
-def _normalise_formats(values: Sequence[str]) -> List[str]:
-    valid = {"png", "pdf"}
-    formats: List[str] = []
-    for raw in values:
-        fmt = raw.strip().lower()
-        if fmt not in valid:
-            raise ValueError(f"Unsupported format {raw!r}. Expected one of {sorted(valid)}")
-        if fmt not in formats:
-            formats.append(fmt)
-    return formats
-
-
 def _plot_mode_comparison(
     *,
     modes: Sequence[str],
@@ -104,7 +91,7 @@ def main() -> None:
     if not summary.exists():
         raise FileNotFoundError(f"Missing {summary}")
 
-    formats = _normalise_formats(args.formats)
+    formats = normalise_output_formats(args.formats)
     rows = filter_rows(
         read_rows(summary),
         base_process=args.base_process,

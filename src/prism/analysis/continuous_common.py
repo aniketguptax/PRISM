@@ -128,3 +128,16 @@ def finite_min_max(matrices: Iterable[np.ndarray]) -> Tuple[Optional[float], Opt
     if not values:
         return None, None
     return min(values), max(values)
+
+
+def normalise_output_formats(values: Sequence[str]) -> List[str]:
+    """Normalise a list of output format names and reject unsupported ones."""
+    valid = {"png", "pdf"}
+    formats: List[str] = []
+    for raw in values:
+        fmt = raw.strip().lower()
+        if fmt not in valid:
+            raise ValueError(f"Unsupported format {raw!r}. Expected one of {sorted(valid)}")
+        if fmt not in formats:
+            formats.append(fmt)
+    return formats
