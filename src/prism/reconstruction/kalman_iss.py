@@ -133,8 +133,8 @@ def _to_continuous_matrix(
 
 
 def _projection_pca(y: Array, macro_dim: int) -> Array:
-    centered = y - np.mean(y, axis=0, keepdims=True)
-    _, _, vt = np.linalg.svd(centered, full_matrices=False)
+    centred = y - np.mean(y, axis=0, keepdims=True)
+    _, _, vt = np.linalg.svd(centred, full_matrices=False)
     if macro_dim > vt.shape[0]:
         raise ValueError(
             f"macro_dim={macro_dim} exceeds available rank {vt.shape[0]} for PCA projection."
@@ -1044,7 +1044,7 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
         if mode == "random":
             return _projection_random(y_train.shape[1], macro_dim, seed=seed), "random"
         if mode == "psi_opt":
-            # placeholder projection; caller replaces with optimised L.
+            # Start from PCA; the Psi branch swaps in the fitted projection later.
             return _projection_pca(y_train, macro_dim), "psi_opt"
         raise ValueError(f"Unknown projection_mode={mode!r}. Expected 'pca', 'random', or 'psi_opt'.")
 
@@ -1102,47 +1102,50 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
         mode: str,
     ) -> tuple[Array, str, float, str, int, int, Array]:
         projection, projection_label = self._projection(y_train, macro_dim=macro_dim, seed=seed, mode=mode)
-        innovations = innovations_from_ssm(
-            iss_model,
-            tol=self.psi_tol,
-            max_iter=self.psi_max_iter,
-            ridge=self.psi_ridge,
-            strict=not self.allow_time_varying_fallback,
-        )
-        psi_opt = _compute_psi_with_backoff(
-            innovations,
-            projection,
-            tol=self.psi_tol,
-            max_iter=self.psi_max_iter,
-            ridge=self.psi_ridge,
-        )
+        psi_opt = math.nan
         psi_optimiser = projection_label
         psi_restarts = 1
         psi_iterations = 1
         psi_L = projection.copy()
 
-        should_optimise_psi = self.compute_psi or mode == "psi_opt"
-        if should_optimise_psi:
+        should_compute_psi = self.compute_psi or mode == "psi_opt"
+        if should_compute_psi:
+            innovations = innovations_from_ssm(
+                iss_model,
+                tol=self.psi_tol,
+                max_iter=self.psi_max_iter,
+                ridge=self.psi_ridge,
+                strict=not self.allow_time_varying_fallback,
+            )
+            psi_opt = _compute_psi_with_backoff(
+                innovations,
+                projection,
+                tol=self.psi_tol,
+                max_iter=self.psi_max_iter,
+                ridge=self.psi_ridge,
+            )
+
             try:
-                psi_result = optimise_ss_psi(
-                    innovations,
-                    macro_dim=macro_dim,
-                    seed=seed,
-                    optimiser=self.psi_optimiser,
-                    restarts=self.psi_restarts,
-                    iterations=self.psi_iterations,
-                    lr=self.psi_lr,
-                    step_scale=self.psi_step_scale,
-                    tol=self.psi_tol,
-                    max_iter=self.psi_max_iter,
-                    ridge=self.psi_ridge,
-                )
-                projection = psi_result.L
-                psi_opt = float(psi_result.psi)
-                psi_optimiser = psi_result.optimiser
-                psi_restarts = psi_result.restarts
-                psi_iterations = psi_result.iterations
-                psi_L = psi_result.L.copy()
+                if mode == "psi_opt":
+                    psi_result = optimise_ss_psi(
+                        innovations,
+                        macro_dim=macro_dim,
+                        seed=seed,
+                        optimiser=self.psi_optimiser,
+                        restarts=self.psi_restarts,
+                        iterations=self.psi_iterations,
+                        lr=self.psi_lr,
+                        step_scale=self.psi_step_scale,
+                        tol=self.psi_tol,
+                        max_iter=self.psi_max_iter,
+                        ridge=self.psi_ridge,
+                    )
+                    projection = psi_result.L
+                    psi_opt = float(psi_result.psi)
+                    psi_optimiser = psi_result.optimiser
+                    psi_restarts = psi_result.restarts
+                    psi_iterations = psi_result.iterations
+                    psi_L = psi_result.L.copy()
             except Exception:  # pragma: no cover - rare numeric fallback path
                 psi_opt = _compute_psi_with_backoff(
                     innovations,
