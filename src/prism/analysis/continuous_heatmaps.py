@@ -12,6 +12,7 @@ from prism.analysis.continuous_common import (
     finite_min_max,
     metric_column,
     mode_matrix,
+    normalise_output_formats,
     read_rows,
 )
 
@@ -66,20 +67,6 @@ def _plot_heatmap(
     fig.savefig(outpath)
     plt.close(fig)
     print(f"Wrote {outpath}")
-
-
-def _normalise_formats(values: Sequence[str]) -> List[str]:
-    valid = {"png", "pdf"}
-    formats: List[str] = []
-    for raw in values:
-        fmt = raw.strip().lower()
-        if fmt not in valid:
-            raise ValueError(f"Unsupported format {raw!r}. Expected one of {sorted(valid)}")
-        if fmt not in formats:
-            formats.append(fmt)
-    return formats
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True, help="Run root containing summary_by_condition.csv")
@@ -99,7 +86,7 @@ def main() -> None:
     if not summary.exists():
         raise FileNotFoundError(f"Missing {summary}")
 
-    formats = _normalise_formats(args.formats)
+    formats = normalise_output_formats(args.formats)
     rows = filter_rows(
         read_rows(summary),
         base_process=args.base_process,
