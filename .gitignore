@@ -10,6 +10,8 @@ venv/
 .vscode/
 report/
 data/ds001785/
+data/results/
+data/results_iss/
 data/results_baseline/
 data/results_prism/
 exports_mat/
