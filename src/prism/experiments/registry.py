@@ -1,4 +1,4 @@
-from prism.processes import GoldenMean, EvenProcess, IIDBernoulli, MarkovOrder1, MarkovOrder2, SimpleNonUnifilarSource
+from prism.processes import BlockModularLGSSM, GoldenMean, EvenProcess, IIDBernoulli, MarkovOrder1, MarkovOrder2, SimpleNonUnifilarSource
 from prism.processes.continuous_file import ContinuousFile
 from prism.processes.linear_gaussian_ssm import LinearGaussianSSM
 from prism.reconstruction import OneStepGreedyMerge
@@ -13,6 +13,7 @@ PROCESS_REGISTRY = {
     "sns": SimpleNonUnifilarSource,
     "continuous_file": ContinuousFile,
     "linear_gaussian_ssm": LinearGaussianSSM,
+    "block_modular_lgssm": BlockModularLGSSM,
 }
 
 RECONSTRUCTOR_REGISTRY = {

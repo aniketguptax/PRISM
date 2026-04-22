@@ -7,6 +7,7 @@ from .protocols import Process, Sample
 from .sns import SimpleNonUnifilarSource
 from .continuous_file import ContinuousFile
 from .linear_gaussian_ssm import LinearGaussianSSM
+from .block_modular_lgssm import BlockModularLGSSM
 
 __all__ = [
     "Process",
@@ -19,4 +20,5 @@ __all__ = [
     "SimpleNonUnifilarSource",
     "ContinuousFile",
     "LinearGaussianSSM",
+    "BlockModularLGSSM",
 ]

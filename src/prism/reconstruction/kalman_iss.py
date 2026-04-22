@@ -820,6 +820,29 @@ class GaussianPredictiveStateModel:
     def _steady_state_enabled(self) -> bool:
         return self.iss_mode == "steady_state"
 
+    def macro_labels_at_eps(
+        self,
+        y_train: Array,
+        eps: float,
+    ) -> Array:
+        """Return macro labels for one training sequence at a chosen epsilon."""
+        macro = _build_macro_dynamics(
+            y_train=y_train,
+            iss_model=self.iss,
+            projection=self.projection,
+            eps=eps,
+            macro_bins=self.macro_bins,
+            macro_symboliser=self.macro_symboliser,
+            macro_builder=self.macro_builder,
+            steady_state=self._steady_state_enabled(),
+            steady_state_tol=self.steady_state_tol,
+            steady_state_max_iter=self.steady_state_max_iter,
+            steady_state_ridge=self.steady_state_ridge,
+            allow_time_varying_fallback=self.allow_time_varying_fallback,
+            steady_state_solution=self.steady_state_solution,
+        )
+        return macro.labels
+
     def predictive_distributions(
         self,
         observations: Sequence[Obs] | Array,
@@ -986,6 +1009,31 @@ class GaussianPredictiveStateModel:
             steady_state_solution=self.steady_state_solution,
         )
         return mu_f, p_f
+
+    def macro_label_sequence(
+        self,
+        y_train: Array,
+        *,
+        eps: float | None = None,
+        builder: str | None = None,
+    ) -> Array:
+        """Rebuild one macro label sequence from the stored ISS fit."""
+        macro = _build_macro_dynamics(
+            y_train=np.asarray(y_train, dtype=float),
+            iss_model=self.iss,
+            projection=self.projection,
+            eps=self.macro_eps if eps is None else float(eps),
+            macro_bins=self.macro_bins,
+            macro_symboliser=self.macro_symboliser,
+            macro_builder=self.macro_builder if builder is None else str(builder),
+            steady_state=self._steady_state_enabled(),
+            steady_state_tol=self.steady_state_tol,
+            steady_state_max_iter=self.steady_state_max_iter,
+            steady_state_ridge=self.steady_state_ridge,
+            allow_time_varying_fallback=self.allow_time_varying_fallback,
+            steady_state_solution=self.steady_state_solution,
+        )
+        return macro.labels
 
 
 @dataclass
