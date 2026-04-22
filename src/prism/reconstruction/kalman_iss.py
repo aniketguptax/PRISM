@@ -133,8 +133,8 @@ def _to_continuous_matrix(
 
 
 def _projection_pca(y: Array, macro_dim: int) -> Array:
-    centred = y - np.mean(y, axis=0, keepdims=True)
-    _, _, vt = np.linalg.svd(centred, full_matrices=False)
+    centered = y - np.mean(y, axis=0, keepdims=True)
+    _, _, vt = np.linalg.svd(centered, full_matrices=False)
     if macro_dim > vt.shape[0]:
         raise ValueError(
             f"macro_dim={macro_dim} exceeds available rank {vt.shape[0]} for PCA projection."
@@ -820,6 +820,29 @@ class GaussianPredictiveStateModel:
     def _steady_state_enabled(self) -> bool:
         return self.iss_mode == "steady_state"
 
+    def macro_labels_at_eps(
+        self,
+        y_train: Array,
+        eps: float,
+    ) -> Array:
+        """Return macro labels for one training sequence at a chosen epsilon."""
+        macro = _build_macro_dynamics(
+            y_train=y_train,
+            iss_model=self.iss,
+            projection=self.projection,
+            eps=eps,
+            macro_bins=self.macro_bins,
+            macro_symboliser=self.macro_symboliser,
+            macro_builder=self.macro_builder,
+            steady_state=self._steady_state_enabled(),
+            steady_state_tol=self.steady_state_tol,
+            steady_state_max_iter=self.steady_state_max_iter,
+            steady_state_ridge=self.steady_state_ridge,
+            allow_time_varying_fallback=self.allow_time_varying_fallback,
+            steady_state_solution=self.steady_state_solution,
+        )
+        return macro.labels
+
     def predictive_distributions(
         self,
         observations: Sequence[Obs] | Array,
@@ -987,6 +1010,31 @@ class GaussianPredictiveStateModel:
         )
         return mu_f, p_f
 
+    def macro_label_sequence(
+        self,
+        y_train: Array,
+        *,
+        eps: float | None = None,
+        builder: str | None = None,
+    ) -> Array:
+        """Rebuild one macro label sequence from the stored ISS fit."""
+        macro = _build_macro_dynamics(
+            y_train=np.asarray(y_train, dtype=float),
+            iss_model=self.iss,
+            projection=self.projection,
+            eps=self.macro_eps if eps is None else float(eps),
+            macro_bins=self.macro_bins,
+            macro_symboliser=self.macro_symboliser,
+            macro_builder=self.macro_builder if builder is None else str(builder),
+            steady_state=self._steady_state_enabled(),
+            steady_state_tol=self.steady_state_tol,
+            steady_state_max_iter=self.steady_state_max_iter,
+            steady_state_ridge=self.steady_state_ridge,
+            allow_time_varying_fallback=self.allow_time_varying_fallback,
+            steady_state_solution=self.steady_state_solution,
+        )
+        return macro.labels
+
 
 @dataclass
 class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
@@ -1044,7 +1092,7 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
         if mode == "random":
             return _projection_random(y_train.shape[1], macro_dim, seed=seed), "random"
         if mode == "psi_opt":
-            # Start from PCA; the Psi branch swaps in the fitted projection later.
+            # placeholder projection; caller replaces with optimised L.
             return _projection_pca(y_train, macro_dim), "psi_opt"
         raise ValueError(f"Unknown projection_mode={mode!r}. Expected 'pca', 'random', or 'psi_opt'.")
 
@@ -1102,50 +1150,47 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
         mode: str,
     ) -> tuple[Array, str, float, str, int, int, Array]:
         projection, projection_label = self._projection(y_train, macro_dim=macro_dim, seed=seed, mode=mode)
-        psi_opt = math.nan
+        innovations = innovations_from_ssm(
+            iss_model,
+            tol=self.psi_tol,
+            max_iter=self.psi_max_iter,
+            ridge=self.psi_ridge,
+            strict=not self.allow_time_varying_fallback,
+        )
+        psi_opt = _compute_psi_with_backoff(
+            innovations,
+            projection,
+            tol=self.psi_tol,
+            max_iter=self.psi_max_iter,
+            ridge=self.psi_ridge,
+        )
         psi_optimiser = projection_label
         psi_restarts = 1
         psi_iterations = 1
         psi_L = projection.copy()
 
-        should_compute_psi = self.compute_psi or mode == "psi_opt"
-        if should_compute_psi:
-            innovations = innovations_from_ssm(
-                iss_model,
-                tol=self.psi_tol,
-                max_iter=self.psi_max_iter,
-                ridge=self.psi_ridge,
-                strict=not self.allow_time_varying_fallback,
-            )
-            psi_opt = _compute_psi_with_backoff(
-                innovations,
-                projection,
-                tol=self.psi_tol,
-                max_iter=self.psi_max_iter,
-                ridge=self.psi_ridge,
-            )
-
+        should_optimise_psi = self.compute_psi or mode == "psi_opt"
+        if should_optimise_psi:
             try:
-                if mode == "psi_opt":
-                    psi_result = optimise_ss_psi(
-                        innovations,
-                        macro_dim=macro_dim,
-                        seed=seed,
-                        optimiser=self.psi_optimiser,
-                        restarts=self.psi_restarts,
-                        iterations=self.psi_iterations,
-                        lr=self.psi_lr,
-                        step_scale=self.psi_step_scale,
-                        tol=self.psi_tol,
-                        max_iter=self.psi_max_iter,
-                        ridge=self.psi_ridge,
-                    )
-                    projection = psi_result.L
-                    psi_opt = float(psi_result.psi)
-                    psi_optimiser = psi_result.optimiser
-                    psi_restarts = psi_result.restarts
-                    psi_iterations = psi_result.iterations
-                    psi_L = psi_result.L.copy()
+                psi_result = optimise_ss_psi(
+                    innovations,
+                    macro_dim=macro_dim,
+                    seed=seed,
+                    optimiser=self.psi_optimiser,
+                    restarts=self.psi_restarts,
+                    iterations=self.psi_iterations,
+                    lr=self.psi_lr,
+                    step_scale=self.psi_step_scale,
+                    tol=self.psi_tol,
+                    max_iter=self.psi_max_iter,
+                    ridge=self.psi_ridge,
+                )
+                projection = psi_result.L
+                psi_opt = float(psi_result.psi)
+                psi_optimiser = psi_result.optimiser
+                psi_restarts = psi_result.restarts
+                psi_iterations = psi_result.iterations
+                psi_L = psi_result.L.copy()
             except Exception:  # pragma: no cover - rare numeric fallback path
                 psi_opt = _compute_psi_with_backoff(
                     innovations,
