@@ -17,6 +17,7 @@ from experiments.models import (
     DEFAULT_REP_DIMS,
     evaluate_trial_baseline,
     evaluate_trial_controls,
+    evaluate_trial_iss,
     evaluate_trial_prism,
 )
 from experiments.spatial import (
@@ -46,6 +47,7 @@ from experiments.temporal import (
     build_centre_sweep_specs,
     evaluate_trial_baseline_sliding,
     evaluate_trial_baseline_window,
+    evaluate_trial_iss_baseline_sliding,
     evaluate_trial_centre_sweep,
     evaluate_trial_context_sweep,
     evaluate_trial_multiscale,
@@ -658,6 +660,32 @@ def add_control_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_iss_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--em-iters",
+        type=int,
+        default=50,
+        help="Maximum number of EM iterations for ISS fitting.",
+    )
+    parser.add_argument(
+        "--em-tol",
+        type=float,
+        default=1e-4,
+        help="EM convergence tolerance for ISS fitting.",
+    )
+    parser.add_argument(
+        "--em-ridge",
+        type=float,
+        default=1e-6,
+        help="Ridge regularisation used inside ISS EM.",
+    )
+    parser.add_argument(
+        "--allow-time-varying-fallback",
+        action="store_true",
+        help="Fall back to time-varying filtering if the steady-state solver does not converge.",
+    )
+
+
 def add_prism_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--projection-modes",
@@ -733,6 +761,107 @@ def make_baseline_evaluator(config: dict, _inpath: Path):
             rep_dims=config["rep_dims"],
             train_fraction=config["train_fraction"],
         )
+
+    return evaluate_trial_fn
+
+
+def make_iss_evaluator(config: dict, _inpath: Path):
+    def evaluate_trial_fn(X: np.ndarray, _times: np.ndarray) -> list[dict]:
+        return evaluate_trial_iss(
+            X,
+            rep_dims=config["rep_dims"],
+            train_fraction=config["train_fraction"],
+            em_iters=config["em_iters"],
+            em_tol=config["em_tol"],
+            em_ridge=config["em_ridge"],
+            allow_time_varying_fallback=config["allow_time_varying_fallback"],
+        )
+
+    return evaluate_trial_fn
+
+
+def make_region_sliding_iss_evaluator(config: dict, inpath: Path):
+    has_train_start = config["train_start_ms"] is not None
+    has_train_end = config["train_end_ms"] is not None
+    if has_train_start != has_train_end:
+        raise ValueError("--train-start-ms and --train-end-ms must be set together")
+    if not (has_train_start and has_train_end):
+        raise ValueError(
+            "region-sliding-iss requires explicit --train-start-ms and --train-end-ms"
+        )
+
+    subject = extract_subject_id(inpath)
+    channel_labels = load_subject_channel_labels(
+        subject,
+        derivatives_dir=config["derivatives_dir"],
+    )
+    named_groups = build_channel_groups(channel_labels)
+    selected_groups = {
+        region_name: named_groups[region_name]
+        for region_name in config["regions"]
+        if region_name in named_groups
+    }
+    if not selected_groups:
+        raise ValueError(
+            "No valid channel groups were selected. Available groups are: "
+            + ", ".join(named_groups.keys())
+        )
+
+    control_groups = build_size_matched_control_groups(
+        channel_labels,
+        selected_groups,
+        n_draws=config["random_control_draws"],
+        random_state=int(config["random_state"] + sum(ord(char) for char in subject)),
+    )
+
+    def evaluate_trial_fn(X: np.ndarray, times: np.ndarray) -> list[dict]:
+        rows: list[dict] = []
+
+        def evaluate_group(region_name: str, region_idx: np.ndarray) -> list[dict]:
+            region_rep_dims = tuple(
+                dim for dim in config["rep_dims"] if int(dim) <= int(region_idx.size)
+            )
+            if not region_rep_dims:
+                return []
+
+            return evaluate_trial_iss_baseline_sliding(
+                X[:, region_idx],
+                times_ms=times,
+                rep_dims=region_rep_dims,
+                train_start_ms=config["train_start_ms"],
+                train_end_ms=config["train_end_ms"],
+                target_duration_ms=config["target_duration_ms"],
+                step_ms=config["step_ms"],
+                target_start_min_ms=config["target_start_min_ms"],
+                target_start_max_ms=config["target_start_max_ms"],
+                em_iters=config["em_iters"],
+                em_tol=config["em_tol"],
+                em_ridge=config["em_ridge"],
+                allow_time_varying_fallback=config["allow_time_varying_fallback"],
+            )
+
+        for region_name, region_idx in selected_groups.items():
+            region_rows = evaluate_group(region_name, region_idx)
+            for row in region_rows:
+                row["region_name"] = region_name
+                row["group_kind"] = "named_region"
+                row["matched_region_name"] = region_name
+                row["control_draw_idx"] = np.nan
+                row["n_region_channels"] = int(region_idx.size)
+            rows.extend(region_rows)
+
+        for (matched_region_name, draw_idx), region_idx in control_groups.items():
+            region_rows = evaluate_group(matched_region_name, region_idx)
+            control_name = f"{matched_region_name}_control_{draw_idx:02d}"
+            for row in region_rows:
+                row["region_name"] = control_name
+                row["group_kind"] = "size_matched_control"
+                row["matched_region_name"] = matched_region_name
+                row["control_draw_idx"] = int(draw_idx)
+                row["n_region_channels"] = int(region_idx.size)
+            rows.extend(region_rows)
+
+        return rows
 
     return evaluate_trial_fn
 
@@ -1048,6 +1177,19 @@ def describe_baseline(df: pd.DataFrame, subject: str) -> str:
     return f"Processed {df['trial_idx'].nunique()} trials for {subject}"
 
 
+def describe_iss(df: pd.DataFrame, subject: str) -> str:
+    return f"Processed {df['trial_idx'].nunique()} trials (ISS) for {subject}"
+
+
+def describe_region_sliding_iss(df: pd.DataFrame, subject: str) -> str:
+    n_windows = df["target_start_ms"].nunique()
+    n_regions = df["region_name"].nunique()
+    return (
+        f"Processed {df['trial_idx'].nunique()} trials "
+        f"x {n_regions} channel groups x {n_windows} sliding windows (ISS) for {subject}"
+    )
+
+
 def describe_windowed(df: pd.DataFrame, subject: str) -> str:
     return (
         f"Processed {df['trial_idx'].nunique()} trials "
@@ -1128,6 +1270,29 @@ EXPERIMENTS = (
             "train_fraction": args.train_fraction,
         },
         describe_run=describe_baseline,
+    ),
+    ExperimentSpec(
+        name="iss",
+        description="Run the PCA + steady-state ISS (EM) trial evaluator for one or all subjects.",
+        default_outdir="./data/results_iss",
+        combined_filename="all_subjects_trial_iss.csv",
+        output_suffix="_trial_iss.csv",
+        output_columns=COMMON_OUTPUT_COLUMNS,
+        evaluate_trial_factory=make_iss_evaluator,
+        sort_columns=("subject", "trial_idx", "rep_dim"),
+        time_bounds_keys=("tmin_ms", "tmax_ms"),
+        train_fraction_help="Fraction of each trial used for training along the time axis.",
+        rep_dims_default=DEFAULT_REP_DIMS,
+        add_arguments=add_iss_arguments,
+        config_from_args=lambda args: {
+            "rep_dims": tuple(args.rep_dims),
+            "train_fraction": args.train_fraction,
+            "em_iters": args.em_iters,
+            "em_tol": args.em_tol,
+            "em_ridge": args.em_ridge,
+            "allow_time_varying_fallback": args.allow_time_varying_fallback,
+        },
+        describe_run=describe_iss,
     ),
     ExperimentSpec(
         name="windowed",
@@ -1260,6 +1425,44 @@ EXPERIMENTS = (
             "random_state": args.random_state,
         },
         describe_run=describe_region_sliding,
+    ),
+    ExperimentSpec(
+        name="region-sliding-iss",
+        description=(
+            "Run the steady-state ISS sliding analysis across scalp regions "
+            "with a fixed pre-stimulus training window."
+        ),
+        default_outdir="./data/results_iss/region_sliding_iss",
+        combined_filename="all_subjects_region_sliding_iss.csv",
+        output_suffix="_region_sliding_iss.csv",
+        output_columns=REGION_SLIDING_OUTPUT_COLUMNS,
+        evaluate_trial_factory=make_region_sliding_iss_evaluator,
+        sort_columns=("subject", "trial_idx", "region_name", "target_start_ms", "rep_dim"),
+        add_arguments=lambda p: (add_region_sliding_arguments(p), add_iss_arguments(p)),
+        rep_dims_default=(2, 4),
+        rep_dims_help=(
+            "Representation dimensions to evaluate. Defaults are kept small so every "
+            "scalp region has enough channels for PCA and ISS EM fitting."
+        ),
+        config_from_args=lambda args: {
+            "rep_dims": tuple(args.rep_dims),
+            "history_ms": args.history_ms,
+            "target_duration_ms": args.target_duration_ms,
+            "step_ms": args.step_ms,
+            "target_start_min_ms": args.target_start_min_ms,
+            "target_start_max_ms": args.target_start_max_ms,
+            "train_start_ms": args.train_start_ms,
+            "train_end_ms": args.train_end_ms,
+            "regions": tuple(args.regions),
+            "derivatives_dir": Path(args.derivatives_dir),
+            "random_control_draws": args.random_control_draws,
+            "random_state": args.random_state,
+            "em_iters": args.em_iters,
+            "em_tol": args.em_tol,
+            "em_ridge": args.em_ridge,
+            "allow_time_varying_fallback": args.allow_time_varying_fallback,
+        },
+        describe_run=describe_region_sliding_iss,
     ),
     ExperimentSpec(
         name="control",

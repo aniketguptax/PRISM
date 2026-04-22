@@ -1,26 +1,4 @@
-"""Trial-level mechanistic dissociation analysis.
-
-This module strengthens the headline detection-vs-confidence dissociation by:
-1. Estimating the trial-level marginal contribution of the pre-stim VAR predictive-fit
-   features beyond the post-stim baseline-corrected evoked response (i.e. it
-   isolates what the augmentation adds, per trial).
-2. Fitting subject-random-intercept linear mixed-effects models with ~6500 trials
-   instead of n=18 paired subject means, dramatically increasing statistical
-   power and producing reportable beta coefficients with proper standard errors.
-3. Reproducing the dissociation with per-subject Spearman rank correlations
-   between the predictive-fit contribution and (a) detection status, (b)
-   confidence rating on hits, with stimamp partialled out via Spearman partial
-   correlation.
-
-The pre-stim VAR features (pred_r2_obs, pred_mse_obs, pred_r2_latent,
-pred_nll_latent) measure how well a VAR(1) model fit on the -300 to 0 ms
-baseline window predicts the post-stim test window. They quantify
-**stimulus-evoked dynamical disruption** of pre-stim brain state, NOT post-stim
-amplitude (raw_regions_delta already captures channel-wise post-stim minus
-pre-stim mean amplitude). The marginal contribution of the augmentation is
-therefore the predictive value of pre-stim dynamic structure beyond evoked
-amplitude.
-"""
+"""Trial-level detection versus confidence dissociation analysis."""
 
 from __future__ import annotations
 
@@ -141,18 +119,7 @@ def _coef_row(model, name: str, term: str, n_obs: int, n_groups: int):
 
 
 def fit_detection_mixed_effects(trial_frame: pd.DataFrame) -> pd.DataFrame:
-    """Test whether the pre-stim VAR predictive-fit contribution discriminates
-    hit vs miss above and beyond raw evoked amplitude and stimulus amplitude,
-    pooled across all trials with subject random intercepts.
-
-    Two complementary specifications:
-    A. pred_fit_contrib ~ sdt_int + stimamp + (1|subject) — does the
-       trial-level augmentation contribution covary with hit-vs-miss after
-       stimamp control?
-    B. evidence_hybrid ~ evidence_raw + stimamp + sdt_int + (1|subject) — given
-       the raw evidence and stimamp, does sdt explain residual evidence in the
-       hybrid model? (sanity check that the augmentation routes through sdt.)
-    """
+    """Fit the two detection mixed-effects specifications used in the paper."""
     n_obs = len(trial_frame)
     n_groups = trial_frame["subject"].nunique()
     rows = []
@@ -203,11 +170,7 @@ def fit_detection_mixed_effects(trial_frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def fit_confidence_mixed_effects(trial_frame: pd.DataFrame) -> pd.DataFrame:
-    """Same two specifications, restricted to hits, predicting confidence.
-
-    A. pred_fit_contrib ~ confidence + stimamp + (1|subject)
-    B. evidence_hybrid ~ evidence_raw + stimamp + confidence + (1|subject)
-    """
+    """Fit the two confidence mixed-effects specifications on hit trials."""
     hits = trial_frame.loc[trial_frame["sdt_int"] == 1].dropna(subset=["confidence"])
     if hits.empty:
         return pd.DataFrame()

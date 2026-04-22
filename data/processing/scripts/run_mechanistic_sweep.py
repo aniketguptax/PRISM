@@ -1,6 +1,4 @@
-"""Run trial-level detection + confidence LME on every region x window in the
-matched-spatial-control sweep, producing one stacked table for spatial
-dissociation in a trial-level mixed-effects framework."""
+"""Run the trial-level mechanistic sweep across regions and time windows."""
 
 from __future__ import annotations
 

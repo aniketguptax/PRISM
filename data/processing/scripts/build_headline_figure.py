@@ -1,16 +1,4 @@
-"""Publication-grade headline figure for the central pre-stim VAR predictive-fit
-detection signal:
-
-  Panel A — Forest plot of trial-level LME beta on sdt across the 15 region x
-            window cells (95% CI, Holm-significance markers).
-  Panel B — Leave-one-subject-out distribution: drop each subject in turn,
-            show the resulting beta and z (rug + median band).
-  Panel C — Within-subject permutation null distribution against the observed
-            central 125-375 beta.
-  Panel D — Per-subject Spearman partial correlation r(pred_fit, hit | stimamp)
-            and r(pred_fit, conf | stimamp), paired strip with subject lines.
-
-All four panels combine into a single 2x2 figure suitable for a journal headline."""
+"""Build the four-panel headline figure for the mechanistic analysis."""
 
 from __future__ import annotations
 

@@ -1,19 +1,4 @@
-"""Robustness checks for the central 125-375 ms detection LME headline:
-
-  (1) Leave-one-subject-out: refit the LME after dropping each subject and
-      report the range of betas, z-values and p-values. Headline survives if
-      every leave-one-out fit remains highly significant.
-
-  (2) Within-subject permutation null on sdt: shuffle the hit/miss label
-      within subject N times, refit the LME, build the empirical null
-      distribution of the sdt beta. Empirical p = fraction of null betas
-      with absolute value >= observed beta.
-
-We use specification A (`pred_fit_contrib ~ sdt_int + stimamp + (1|subject)`)
-on the central 125-375 ms trial-scores CSV from the matched-spatial-control
-sweep, and reuse `build_trial_level_frame` + `_safe_lme_fit` from the
-mechanistic_dissociation module so the test is identical to the headline.
-"""
+"""Run leave-one-subject-out and permutation checks for the detection headline."""
 
 from __future__ import annotations
 
