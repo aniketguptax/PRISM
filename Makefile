@@ -7,7 +7,7 @@ endif
 
 PLOT_ENV = MPLBACKEND=Agg MPLCONFIGDIR=/tmp/prism-mpl XDG_CACHE_HOME=/tmp
 
-.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all
+.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep
 
 test:
 	@if ! $(PYTHON) -c "import pytest" >/dev/null 2>&1; then \
@@ -122,3 +122,33 @@ smoke-continuous-psi:
 		--metrics logloss gaussian_logloss n_states C_mu_empirical unifilarity_score branch_entropy psi_opt
 
 smoke-all: smoke-discrete smoke-continuous smoke-continuous-psi
+
+block-modular-smoke:
+	cd src && $(PYTHON) -m prism.experiments.block_modular_recovery \
+		--couplings 0.0 0.05 0.20 \
+		--seeds 0 \
+		--obs-designs random aligned \
+		--builders hierarchical_single linear_quantile \
+		--eps-macros 0.15 0.25 \
+		--length 800 \
+		--em-iters 25 \
+		--outdir ./results/block_modular_smoke
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.block_modular_hierarchy \
+		--root ./results/block_modular_smoke
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.block_modular_emergence \
+		--root ./results/block_modular_smoke
+
+block-modular-sweep:
+	cd src && $(PYTHON) -m prism.experiments.block_modular_recovery \
+		--couplings 0.0 0.025 0.05 0.10 0.20 \
+		--seeds 0 1 2 \
+		--obs-designs random aligned \
+		--builders hierarchical_single hierarchical_complete linear_quantile greedy \
+		--eps-macros 0.10 0.15 0.25 0.40 \
+		--length 4000 \
+		--em-iters 50 \
+		--outdir ./results/block_modular_sweep
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.block_modular_hierarchy \
+		--root ./results/block_modular_sweep
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.block_modular_emergence \
+		--root ./results/block_modular_sweep
