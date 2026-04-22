@@ -9,6 +9,7 @@ import numpy as np
 from experiments.models import (
     DEFAULT_REP_DIMS,
     evaluate_baseline_train_test,
+    evaluate_iss_train_test,
     evaluate_prism_train_test,
     evaluate_trial_baseline,
 )
@@ -847,6 +848,121 @@ def evaluate_trial_baseline_sliding(
         specs=sliding_specs,
         boundary_tolerance_ms=boundary_tolerance_ms,
         max_train_pairs=max_train_pairs,
+    )
+
+
+def evaluate_trial_iss_train_test_specs(
+    X: np.ndarray,
+    times_ms: np.ndarray,
+    *,
+    rep_dims: Iterable[int],
+    specs: Iterable[dict],
+    boundary_tolerance_ms: float,
+    em_iters: int = 50,
+    em_tol: float = 1e-4,
+    em_ridge: float = 1e-6,
+    allow_time_varying_fallback: bool = False,
+) -> list[dict]:
+    X = np.asarray(X, dtype=float)
+    times_ms = np.asarray(times_ms, dtype=float).reshape(-1)
+    rep_dims = tuple(int(dim) for dim in rep_dims)
+
+    rows: list[dict] = []
+    for spec in specs:
+        metadata = dict(spec)
+
+        try:
+            train_X, train_times = slice_trial_window(
+                X,
+                times_ms,
+                spec["train_start_ms"],
+                spec["train_end_ms"],
+                require_full_window=True,
+                boundary_tolerance_ms=boundary_tolerance_ms,
+            )
+            test_X, test_times = slice_trial_window(
+                X,
+                times_ms,
+                spec["test_start_ms"],
+                spec["test_end_ms"],
+                require_full_window=True,
+                boundary_tolerance_ms=boundary_tolerance_ms,
+            )
+            spec_rows = evaluate_iss_train_test(
+                train_X,
+                test_X,
+                rep_dims=rep_dims,
+                n_time=int(train_X.shape[0] + test_X.shape[0]),
+                em_iters=em_iters,
+                em_tol=em_tol,
+                em_ridge=em_ridge,
+                allow_time_varying_fallback=allow_time_varying_fallback,
+            )
+            for row in spec_rows:
+                row.update(metadata)
+                row["train_tmin_ms"] = float(train_times[0])
+                row["train_tmax_ms"] = float(train_times[-1])
+                row["test_tmin_ms"] = float(test_times[0])
+                row["test_tmax_ms"] = float(test_times[-1])
+                row["trial_n_time"] = int(X.shape[0])
+        except Exception as exc:
+            spec_rows = make_context_spec_error_rows(
+                X,
+                rep_dims=rep_dims,
+                metadata=metadata,
+                error=str(exc),
+            )
+
+        rows.extend(spec_rows)
+
+    return rows
+
+
+def evaluate_trial_iss_baseline_sliding(
+    X: np.ndarray,
+    times_ms: np.ndarray,
+    *,
+    rep_dims: Iterable[int] = DEFAULT_REP_DIMS,
+    train_start_ms: float = DEFAULT_BASELINE_TRAIN_START_MS,
+    train_end_ms: float = DEFAULT_BASELINE_TRAIN_END_MS,
+    target_duration_ms: float = DEFAULT_SLIDING_TARGET_DURATION_MS,
+    step_ms: float = DEFAULT_SLIDING_STEP_MS,
+    target_start_min_ms: float = DEFAULT_SLIDING_TARGET_START_MIN_MS,
+    target_start_max_ms: float = DEFAULT_SLIDING_TARGET_START_MAX_MS,
+    boundary_tolerance_ms: float | None = None,
+    sliding_specs: tuple[dict, ...] | None = None,
+    em_iters: int = 50,
+    em_tol: float = 1e-4,
+    em_ridge: float = 1e-6,
+    allow_time_varying_fallback: bool = False,
+) -> list[dict]:
+    X = np.asarray(X, dtype=float)
+    times_ms = np.asarray(times_ms, dtype=float).reshape(-1)
+    rep_dims = tuple(int(dim) for dim in rep_dims)
+
+    if boundary_tolerance_ms is None:
+        boundary_tolerance_ms = infer_boundary_tolerance_ms(times_ms)
+
+    if sliding_specs is None:
+        sliding_specs = build_baseline_sliding_specs(
+            train_start_ms=train_start_ms,
+            train_end_ms=train_end_ms,
+            target_duration_ms=target_duration_ms,
+            step_ms=step_ms,
+            target_start_min_ms=target_start_min_ms,
+            target_start_max_ms=target_start_max_ms,
+        )
+
+    return evaluate_trial_iss_train_test_specs(
+        X,
+        times_ms,
+        rep_dims=rep_dims,
+        specs=sliding_specs,
+        boundary_tolerance_ms=boundary_tolerance_ms,
+        em_iters=em_iters,
+        em_tol=em_tol,
+        em_ridge=em_ridge,
+        allow_time_varying_fallback=allow_time_varying_fallback,
     )
 
 

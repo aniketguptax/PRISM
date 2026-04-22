@@ -613,6 +613,152 @@ def evaluate_trial_baseline(
     )
 
 
+def _load_iss_scoring_components():
+    src_root = Path(__file__).resolve().parents[3] / "src"
+    if not src_root.exists():
+        raise FileNotFoundError(f"PRISM source directory not found: {src_root}")
+    if str(src_root) not in sys.path:
+        sys.path.insert(0, str(src_root))
+    from prism.continuous.iss import (
+        KalmanISSConfig,
+        fit_kalman_iss_em,
+        one_step_predictive_y,
+    )
+    return fit_kalman_iss_em, KalmanISSConfig, one_step_predictive_y
+
+
+def evaluate_iss_train_test(
+    train_X: np.ndarray,
+    test_X: np.ndarray,
+    *,
+    rep_dims: Iterable[int] = DEFAULT_REP_DIMS,
+    n_time: int | None = None,
+    em_iters: int = 50,
+    em_tol: float = 1e-4,
+    em_ridge: float = 1e-6,
+    allow_time_varying_fallback: bool = False,
+) -> list[dict]:
+    train_X = np.asarray(train_X, dtype=float)
+    test_X = np.asarray(test_X, dtype=float)
+    rep_dims = tuple(int(dim) for dim in rep_dims)
+
+    if train_X.ndim != 2 or test_X.ndim != 2:
+        raise ValueError("train_X and test_X must both have shape (time, channels)")
+    if train_X.shape[1] != test_X.shape[1]:
+        raise ValueError(
+            "train_X and test_X must have the same number of channels, "
+            f"got {train_X.shape[1]} and {test_X.shape[1]}"
+        )
+    if train_X.shape[0] < 5:
+        raise ValueError("train_X must contain at least 5 time points for ISS EM fitting")
+    if test_X.shape[0] < 1:
+        raise ValueError("test_X must contain at least 1 time point")
+    if not np.isfinite(train_X).all() or not np.isfinite(test_X).all():
+        raise ValueError("train_X and test_X must not contain NaN or infinite values")
+
+    fit_kalman_iss_em, KalmanISSConfig, one_step_predictive_y = _load_iss_scoring_components()
+
+    total_n_time = int(train_X.shape[0] + test_X.shape[0] if n_time is None else n_time)
+    n_channels = int(train_X.shape[1])
+    train_len = int(train_X.shape[0])
+    test_len = int(test_X.shape[0])
+
+    train_Zsc, test_Zsc, train_mean, train_scale = standardise_from_train(train_X, test_X)
+    rows = []
+
+    for rep_dim in rep_dims:
+        row = {
+            "rep_dim": int(rep_dim),
+            "n_time": total_n_time,
+            "n_channels": n_channels,
+            "train_len": train_len,
+            "test_len": test_len,
+            "train_pair_count": train_len,
+            "pred_mse_obs": np.nan,
+            "pred_r2_obs": np.nan,
+            "pred_mse_latent": np.nan,
+            "pred_r2_latent": np.nan,
+            "pred_nll_latent": np.nan,
+            "error": "",
+        }
+
+        try:
+            pca_mean, components = fit_pca_projection(train_Zsc, n_components=rep_dim)
+            train_latent = project_with_pca(train_Zsc, pca_mean, components)
+            test_latent = project_with_pca(test_Zsc, pca_mean, components)
+
+            cfg = KalmanISSConfig(
+                latent_dim=rep_dim,
+                em_iters=em_iters,
+                tol=em_tol,
+                ridge=em_ridge,
+            )
+            model = fit_kalman_iss_em(train_latent, cfg)
+
+            # Predict over the full sequence so the Kalman filter warms up on
+            # training data before producing test-segment predictions.
+            full_latent = np.vstack([train_latent, test_latent])
+            mu_y, S_y, _ = one_step_predictive_y(
+                full_latent,
+                model,
+                steady_state=True,
+                allow_time_varying_fallback=allow_time_varying_fallback,
+            )
+
+            # mu_y: (T_total, rep_dim, 1); S_y: (T_total, rep_dim, rep_dim)
+            mu_y_test = mu_y[train_len:, :, 0]  # (test_len, rep_dim)
+            S_y_test = S_y[train_len:]           # (test_len, rep_dim, rep_dim)
+
+            pred_obs_zsc = reconstruct_from_pca(mu_y_test, pca_mean, components)
+            pred_obs = unstandardise(pred_obs_zsc, train_mean, train_scale)
+
+            row["pred_mse_obs"] = float(np.mean((test_X - pred_obs) ** 2))
+            row["pred_r2_obs"] = compute_r2(test_X, pred_obs)
+            row["pred_mse_latent"] = float(np.mean((test_latent - mu_y_test) ** 2))
+            row["pred_r2_latent"] = compute_r2(test_latent, mu_y_test)
+            row["pred_nll_latent"] = mean_sequence_gaussian_nll(
+                test_latent, mu_y_test, S_y_test
+            )
+
+        except Exception as exc:
+            row["error"] = str(exc)
+
+        rows.append(row)
+
+    return rows
+
+
+def evaluate_trial_iss(
+    X: np.ndarray,
+    rep_dims: Iterable[int] = DEFAULT_REP_DIMS,
+    train_fraction: float = 0.7,
+    em_iters: int = 50,
+    em_tol: float = 1e-4,
+    em_ridge: float = 1e-6,
+    allow_time_varying_fallback: bool = False,
+) -> list[dict]:
+    """Run the PCA + steady-state ISS evaluator for one trial."""
+    rep_dims = tuple(int(dim) for dim in rep_dims)
+    X = np.asarray(X, dtype=float)
+
+    try:
+        train_X, test_X = split_trial_time(X, train_fraction=train_fraction)
+    except Exception as exc:
+        train_len = max(0, min(int(np.floor(X.shape[0] * train_fraction)), X.shape[0]))
+        test_len = max(0, X.shape[0] - train_len)
+        return make_error_rows(X, rep_dims, train_len, test_len, str(exc))
+    return evaluate_iss_train_test(
+        train_X,
+        test_X,
+        rep_dims=rep_dims,
+        n_time=int(X.shape[0]),
+        em_iters=em_iters,
+        em_tol=em_tol,
+        em_ridge=em_ridge,
+        allow_time_varying_fallback=allow_time_varying_fallback,
+    )
+
+
 def evaluate_trial_controls(
     X: np.ndarray,
     rep_dims: Iterable[int] = DEFAULT_REP_DIMS,
@@ -1100,3 +1246,73 @@ def evaluate_prism_train_test(
             rows.append(row)
 
     return rows
+
+
+def fit_iss_label_chains(
+    train_X: np.ndarray,
+    *,
+    rep_dim: int = 4,
+    eps_values: tuple = (0.10, 0.15, 0.25, 0.40),
+    macro_bins: int = 3,
+    macro_builder: str = "hierarchical_single",
+    projection_mode: str = "pca",
+    em_iters: int = 20,
+    em_tol: float = 1e-3,
+    em_ridge: float = 1e-6,
+    iss_mode: str = "steady_state",
+    allow_time_varying_fallback: bool = False,
+    random_state: int = 0,
+):
+    """Fit one ISS model and return per-timestep macro labels at each eps.
+
+    Returns a dict mapping eps -> label array (length T_train-1) suitable for
+    building a CE 2.0 coarsening chain.  Returns None if fitting fails.
+    """
+    train_X = np.asarray(train_X, dtype=float)
+    if train_X.shape[0] < max(30, 5 * rep_dim):
+        return None
+
+    try:
+        KalmanISSReconstructor, ISSDim = _load_prism_components()
+    except Exception:
+        return None
+
+    train_Zsc, _, _, _ = standardise_from_train(train_X, train_X[:1])
+
+    if projection_mode == "pca":
+        try:
+            pca_mean, components = fit_pca_projection(train_Zsc, n_components=rep_dim)
+            model_obs = project_with_pca(train_Zsc, pca_mean, components)
+        except Exception:
+            return None
+    else:
+        model_obs = train_Zsc
+
+    reconstructor = KalmanISSReconstructor(
+        em_iters=em_iters,
+        em_tol=em_tol,
+        em_ridge=em_ridge,
+        macro_eps=float(eps_values[0]),
+        macro_bins=macro_bins,
+        macro_builder=macro_builder,
+        projection_mode=projection_mode,
+        iss_mode=iss_mode,
+        allow_time_varying_fallback=allow_time_varying_fallback,
+    )
+    try:
+        model = reconstructor.fit(
+            model_obs,
+            ISSDim(d=rep_dim, dv=rep_dim),
+            seed=int(random_state),
+        )
+    except Exception:
+        return None
+
+    chains = {}
+    for eps in eps_values:
+        try:
+            chains[float(eps)] = model.macro_label_sequence(model_obs, eps=float(eps))
+        except Exception:
+            pass
+
+    return chains if chains else None
