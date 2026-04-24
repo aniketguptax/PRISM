@@ -15,3 +15,12 @@ data/results_iss/
 data/results_baseline/
 data/results_prism/
 data/exports_mat/
+logs/
+src/results/**/*.md
+src/results/**/*.npz
+src/results/**/progress.log
+src/results/hierarchical_predictive_eps_scan/
+src/results/hierarchical_predictive_smoke*/
+src/results/hierarchical_predictive_sweep/
+src/results/hierarchical_switching_smoke*/
+src/results/low_variance_lgssm_smoke*/
