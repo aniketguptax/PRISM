@@ -1,0 +1,33 @@
+#!/bin/bash
+#PBS -N lvlgssm
+#PBS -l select=1:ncpus=4:mem=16gb
+#PBS -l walltime=04:00:00
+#PBS -j oe
+
+set -euo pipefail
+
+REPO="${PRISM_REPO:-$HOME/PRISM/PRISM}"
+PYTHON_BIN="${PRISM_PYTHON:-$HOME/venvs/prism/bin/python}"
+
+cd "$REPO"
+mkdir -p logs
+exec > "logs/low_variance_lgssm_main_${PBS_JOBID:-manual}.log" 2>&1
+
+echo "started $(date)"
+echo "repo=$REPO"
+echo "python=$PYTHON_BIN"
+echo "job=${PBS_JOBID:-manual}"
+
+module load Python/3.11.3-GCCcore-12.3.0
+source "$HOME/venvs/prism/bin/activate"
+
+NTHREADS="${PBS_NCPUS:-4}"
+export OMP_NUM_THREADS="$NTHREADS"
+export OPENBLAS_NUM_THREADS="$NTHREADS"
+export MKL_NUM_THREADS="$NTHREADS"
+export NUMEXPR_NUM_THREADS="$NTHREADS"
+export MPLBACKEND=Agg
+
+PYTHON="$PYTHON_BIN" make low-variance-lgssm-main
+
+echo "finished $(date)"

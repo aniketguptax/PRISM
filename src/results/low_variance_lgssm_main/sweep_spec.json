@@ -1,0 +1,32 @@
+{
+  "em_iters": 30,
+  "eps_values": [
+    0.25,
+    0.35,
+    0.5
+  ],
+  "history_len": 3,
+  "kmeans_ks": [
+    3,
+    6,
+    9,
+    12,
+    18
+  ],
+  "latent_dim": 3,
+  "length": 6000,
+  "obs_dim": 8,
+  "obs_stds": [
+    0.15,
+    0.25,
+    0.4
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "train_frac": 0.8
+}

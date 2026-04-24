@@ -8,6 +8,9 @@ from .sns import SimpleNonUnifilarSource
 from .continuous_file import ContinuousFile
 from .linear_gaussian_ssm import LinearGaussianSSM
 from .block_modular_lgssm import BlockModularLGSSM
+from .hierarchical_predictive_hmm import HierarchicalPredictiveHMM
+from .hierarchical_switching_gaussian import HierarchicalSwitchingGaussian
+from .predictive_low_variance_lgssm import PredictiveLowVarianceLGSSM
 
 __all__ = [
     "Process",
@@ -21,4 +24,7 @@ __all__ = [
     "ContinuousFile",
     "LinearGaussianSSM",
     "BlockModularLGSSM",
+    "HierarchicalPredictiveHMM",
+    "HierarchicalSwitchingGaussian",
+    "PredictiveLowVarianceLGSSM",
 ]

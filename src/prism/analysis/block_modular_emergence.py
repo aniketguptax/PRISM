@@ -117,7 +117,11 @@ def _ground_truth_path(
     return out
 
 
-def _summarise_path(chain: list[np.ndarray]) -> dict[str, object]:
+def _summarise_path(
+    chain: list[np.ndarray],
+    *,
+    use_observed_distribution: bool,
+) -> dict[str, object]:
     if not chain:
         return {
             "n_rungs": 0,
@@ -127,7 +131,10 @@ def _summarise_path(chain: list[np.ndarray]) -> dict[str, object]:
             "emergent_complexity": 0.0,
             "emergent_complexity_raw_bits": 0.0,
         }
-    rungs = cp_path_from_label_chain(chain, use_observed_distribution=True)
+    rungs = cp_path_from_label_chain(
+        chain,
+        use_observed_distribution=use_observed_distribution,
+    )
     deltas = delta_cp(rungs)
     return {
         "n_rungs": len(rungs),
@@ -139,9 +146,12 @@ def _summarise_path(chain: list[np.ndarray]) -> dict[str, object]:
     }
 
 
-def _single_rung_cp(labels: np.ndarray) -> PathRung:
+def _single_rung_cp(labels: np.ndarray, *, use_observed_distribution: bool) -> PathRung:
     tpm, stationary = macro_tpm_from_labels(labels)
-    primitives = causal_primitives(tpm, intervention_distribution=stationary)
+    primitives = causal_primitives(
+        tpm,
+        intervention_distribution=stationary if use_observed_distribution else None,
+    )
     return PathRung(
         primitives.n_states,
         primitives.cp,
@@ -366,7 +376,11 @@ def _plot_ec(
     plt.close(fig)
 
 
-def run_analysis(root: Path) -> Path:
+def run_analysis(
+    root: Path,
+    *,
+    use_observed_distribution: bool = True,
+) -> Path:
     csv_path = root / "recovery.csv"
     if not csv_path.exists():
         raise FileNotFoundError(csv_path)
@@ -396,7 +410,10 @@ def run_analysis(root: Path) -> Path:
                 chain = _path_for_builder(npz, builder)
                 if chain:
                     chain = [_align_labels(labels, chain[0].shape[0]) for labels in chain]
-                    summary = _summarise_path(chain)
+                    summary = _summarise_path(
+                        chain,
+                        use_observed_distribution=use_observed_distribution,
+                    )
                     key = (coupling, seed, design, f"iss_{builder}")
                     path_records[key] = summary
                     out_rows.append(_flatten_summary(coupling, seed, design, key[3], summary))
@@ -404,13 +421,19 @@ def run_analysis(root: Path) -> Path:
             pca_chain = _path_for_pca(npz)
             if pca_chain:
                 pca_chain = [_align_labels(labels, pca_chain[0].shape[0]) for labels in pca_chain]
-                summary = _summarise_path(pca_chain)
+                summary = _summarise_path(
+                    pca_chain,
+                    use_observed_distribution=use_observed_distribution,
+                )
                 key = (coupling, seed, design, "pca_kmeans")
                 path_records[key] = summary
                 out_rows.append(_flatten_summary(coupling, seed, design, key[3], summary))
 
             for gt_name, labels in gt_paths.items():
-                rung = _single_rung_cp(labels)
+                rung = _single_rung_cp(
+                    labels,
+                    use_observed_distribution=use_observed_distribution,
+                )
                 key = (coupling, seed, design, f"gt_{gt_name}")
                 path_records[key] = {
                     "n_rungs": 1,
@@ -440,15 +463,29 @@ def run_analysis(root: Path) -> Path:
                     }
                 )
 
-    out_csv = root / "emergence.csv"
+    out_csv = root / ("emergence.csv" if use_observed_distribution else "emergence_uniform.csv")
     _write_csv(out_csv, out_rows)
 
     figures_dir = root / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
     designs = sorted({design for _, _, design, _ in path_records})
     for design in designs:
-        _plot_hierarchy(path_records, design, figures_dir / f"emergence_hierarchy_{design}.png")
-        _plot_ec(path_records, design, figures_dir / f"emergence_ec_{design}.png")
+        hierarchy_name = (
+            f"emergence_hierarchy_{design}.png"
+            if use_observed_distribution
+            else f"emergence_hierarchy_uniform_{design}.png"
+        )
+        ec_name = (
+            f"emergence_ec_{design}.png"
+            if use_observed_distribution
+            else f"emergence_ec_uniform_{design}.png"
+        )
+        _plot_hierarchy(
+            path_records,
+            design,
+            figures_dir / hierarchy_name,
+        )
+        _plot_ec(path_records, design, figures_dir / ec_name)
 
     return out_csv
 
@@ -456,8 +493,17 @@ def run_analysis(root: Path) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True, help="Directory containing recovery.csv and label archives")
+    parser.add_argument(
+        "--intervention-distribution",
+        choices=("observed", "uniform"),
+        default="observed",
+        help="Use the empirical label distribution or a uniform intervention distribution for CP.",
+    )
     args = parser.parse_args()
-    out_csv = run_analysis(args.root)
+    out_csv = run_analysis(
+        args.root,
+        use_observed_distribution=args.intervention_distribution == "observed",
+    )
     print(f"Wrote {out_csv}")
 
 

@@ -7,7 +7,7 @@ endif
 
 PLOT_ENV = MPLBACKEND=Agg MPLCONFIGDIR=/tmp/prism-mpl XDG_CACHE_HOME=/tmp
 
-.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep
+.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main
 
 test:
 	@if ! $(PYTHON) -c "import pytest" >/dev/null 2>&1; then \
@@ -152,3 +152,64 @@ block-modular-sweep:
 		--root ./results/block_modular_sweep
 	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.block_modular_emergence \
 		--root ./results/block_modular_sweep
+
+hierarchical-predictive-smoke:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.hierarchical_predictive_recovery \
+		--noises 0.02 0.16 \
+		--seeds 0 \
+		--eps-values 0.25 0.30 0.35 0.40 0.45 0.50 \
+		--kmeans-ks 3 6 12 \
+		--length 8000 \
+		--context-len 2 \
+		--future-horizon 4 \
+		--outdir ./results/hierarchical_predictive_smoke
+
+hierarchical-predictive-sweep:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.hierarchical_predictive_recovery \
+		--noises 0.02 0.08 0.16 0.28 \
+		--seeds 0 1 2 \
+		--eps-values 0.25 0.30 0.35 0.40 0.45 0.50 \
+		--kmeans-ks 3 6 12 \
+		--length 20000 \
+		--context-len 2 \
+		--future-horizon 4 \
+		--outdir ./results/hierarchical_predictive_sweep
+
+hierarchical-predictive-main:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.hierarchical_predictive_recovery \
+		--noises 0.02 0.05 0.08 0.12 0.16 0.20 \
+		--seeds 0 1 2 3 4 \
+		--eps-values 0.22 0.25 0.28 0.30 0.32 0.35 0.38 \
+		--kmeans-ks 3 6 9 12 18 \
+		--length 30000 \
+		--context-len 2 \
+		--future-horizon 4 \
+		--outdir ./results/hierarchical_predictive_main
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.hierarchical_predictive_figures \
+		--root ./results/hierarchical_predictive_main
+	cd src && $(PYTHON) -m prism.analysis.hierarchical_predictive_report \
+		--root ./results/hierarchical_predictive_main
+
+low-variance-lgssm-smoke:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.low_variance_lgssm_recovery \
+		--obs-stds 0.25 \
+		--seeds 0 1 \
+		--eps-values 0.25 0.35 0.50 \
+		--kmeans-ks 3 6 12 \
+		--length 2500 \
+		--em-iters 10 \
+		--outdir ./results/low_variance_lgssm_smoke
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.low_variance_lgssm_figures \
+		--root ./results/low_variance_lgssm_smoke
+
+low-variance-lgssm-main:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.low_variance_lgssm_recovery \
+		--obs-stds 0.15 0.25 0.40 \
+		--seeds 0 1 2 3 4 \
+		--eps-values 0.25 0.35 0.50 \
+		--kmeans-ks 3 6 9 12 18 \
+		--length 6000 \
+		--em-iters 30 \
+		--outdir ./results/low_variance_lgssm_main
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.low_variance_lgssm_figures \
+		--root ./results/low_variance_lgssm_main
