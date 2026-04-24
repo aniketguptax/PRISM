@@ -428,11 +428,26 @@ def build_mechanistic_report(
             f"controlling for stimulus amplitude and subject-level baseline differences."
         )
     if confidence_row is not None:
+        confidence_beta = float(confidence_row["beta"])
+        confidence_p = float(confidence_row["p"])
+        if confidence_p < 0.05 and confidence_beta > 0.0:
+            confidence_verdict = (
+                "also increases with subjective confidence on detected trials, "
+                "although this confidence loading is smaller than the detection effect"
+            )
+        elif confidence_p < 0.05 and confidence_beta < 0.0:
+            confidence_verdict = (
+                "decreases with subjective confidence on detected trials, indicating a "
+                "qualitatively different confidence loading"
+            )
+        else:
+            confidence_verdict = (
+                "shows little evidence of a confidence relationship on detected trials"
+            )
         lines.append(
-            f"- Confidence LME beta on confidence = {confidence_row['beta']:.4f} "
-            f"(p = {confidence_row['p']:.3g}); on hits only, the same contribution "
-            f"shows little or no relationship with subjective confidence after the "
-            f"same stimamp control."
+            f"- Confidence LME beta on confidence = {confidence_beta:.4f} "
+            f"(p = {confidence_p:.3g}); on hits only, the same contribution "
+            f"{confidence_verdict} after the same stimamp control."
         )
     if not paired_row.empty:
         prow = paired_row.iloc[0]
@@ -457,11 +472,12 @@ def build_mechanistic_report(
                 "which **stimulus-evoked dynamical disruption** breaks pre-stim "
                 "predictability. The trial-level mixed-effects result therefore claims: "
                 "pre-stim brain dynamics that are more disrupted by the stimulus are "
-                "more likely to yield a behavioural hit, and this dynamical-disruption "
-                "signature is **separable** from both evoked amplitude and from "
-                "subjective confidence on detected trials. This is the multivariate, "
-                "post-stim generalization of Pereira et al. (2021)'s pre-stim alpha "
-                "detection-vs-confidence dissociation."
+                "more likely to yield a behavioural hit, with the central 125-375 ms "
+                "cell also carrying a weaker graded confidence signal on detected "
+                "trials. This dynamical-disruption signature is separable from evoked "
+                "amplitude and stimulus amplitude, but it should be framed as a graded "
+                "perceptual-state signal rather than a clean detection-only "
+                "dissociation."
             ),
         ]
     )
