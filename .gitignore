@@ -16,6 +16,7 @@ data/results_baseline/
 data/results_prism/
 data/exports_mat/
 logs/
+results_log.md
 src/results/**/*.md
 src/results/**/*.npz
 src/results/**/progress.log
