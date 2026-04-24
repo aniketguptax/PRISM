@@ -126,11 +126,20 @@ def _gaussian_held_out_nll(
     return float(total / y_test.shape[0])
 
 
+def _append_progress(path: Path, message: str) -> None:
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f"[{timestamp}] {message}\n")
+        handle.flush()
+
+
 def run_sweep(spec: SweepSpec, outdir: Path) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     csv_path = outdir / "recovery.csv"
     if csv_path.exists():
         csv_path.unlink()
+    progress_path = outdir / "progress.log"
+    progress_path.write_text("", encoding="utf-8")
 
     fieldnames = [
         "coupling",
@@ -165,10 +174,22 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
         total_runs,
         len(spec.couplings) * len(spec.seeds) * len(spec.obs_designs),
     )
+    _append_progress(
+        progress_path,
+        (
+            f"sweep start | total_runs={total_runs} "
+            f"generator_settings={len(spec.couplings) * len(spec.seeds) * len(spec.obs_designs)}"
+        ),
+    )
 
     for coupling in spec.couplings:
         for obs_design in spec.obs_designs:
             for seed in spec.seeds:
+                setting_start = time.perf_counter()
+                _append_progress(
+                    progress_path,
+                    f"setting start | coupling={coupling:g} seed={seed} obs_design={obs_design}",
+                )
                 generator = BlockModularLGSSM(
                     coupling=coupling,
                     obs_dim=spec.obs_dim,
@@ -190,7 +211,15 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
                     em_iters=spec.em_iters,
                     seed=seed,
                 )
+                _append_progress(
+                    progress_path,
+                    f"em start | coupling={coupling:g} seed={seed} obs_design={obs_design}",
+                )
                 iss_model = fit_kalman_iss_em(y_train, iss_cfg)
+                _append_progress(
+                    progress_path,
+                    f"em done | coupling={coupling:g} seed={seed} obs_design={obs_design}",
+                )
                 steady_solution = solve_steady_state_kalman(iss_model, strict=False)
                 mu_pred_test, cov_pred_test, _ = one_step_predictive_y(
                     np.vstack([y_train, y_test]),
@@ -231,6 +260,14 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
                 for builder in spec.builders:
                     for eps_macro in spec.eps_macros:
                         start = time.perf_counter()
+                        _append_progress(
+                            progress_path,
+                            (
+                                f"macro start | completed={completed}/{total_runs} "
+                                f"coupling={coupling:g} seed={seed} obs_design={obs_design} "
+                                f"builder={builder} eps_macro={eps_macro:g}"
+                            ),
+                        )
                         try:
                             macro = _build_macro_dynamics(
                                 y_train=y_train,
@@ -258,6 +295,14 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
                                 exc,
                             )
                             completed += 1
+                            _append_progress(
+                                progress_path,
+                                (
+                                    f"macro failed | completed={completed}/{total_runs} "
+                                    f"coupling={coupling:g} seed={seed} obs_design={obs_design} "
+                                    f"builder={builder} eps_macro={eps_macro:g} error={exc}"
+                                ),
+                            )
                             continue
 
                         labels = np.asarray(macro.labels, dtype=int)
@@ -298,6 +343,15 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
                             f"iss_{_normalise_macro_builder(builder)}_eps{eps_macro:g}"
                         ] = labels
                         completed += 1
+                        _append_progress(
+                            progress_path,
+                            (
+                                f"macro done | completed={completed}/{total_runs} "
+                                f"coupling={coupling:g} seed={seed} obs_design={obs_design} "
+                                f"builder={builder} eps_macro={eps_macro:g} "
+                                f"states={macro.n_macro_states} elapsed={time.perf_counter() - start:.2f}s"
+                            ),
+                        )
                         LOGGER.info(
                             "Progress %d/%d | coupling=%g seed=%d %s builder=%s eps=%g states=%d "
                             "ARI(block/slow/phase/joint)=%.2f/%.2f/%.2f/%.2f",
@@ -324,6 +378,13 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
 
                 for n_clusters in spec.pca_kmeans_ks:
                     start = time.perf_counter()
+                    _append_progress(
+                        progress_path,
+                        (
+                            f"pca_kmeans start | completed={completed}/{total_runs} "
+                            f"coupling={coupling:g} seed={seed} obs_design={obs_design} k={n_clusters}"
+                        ),
+                    )
                     km_labels = _kmeans(macro_obs_aligned, int(n_clusters), seed=seed)
                     n_pred = km_labels.shape[0]
                     aris = {
@@ -352,6 +413,14 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
                     )
                     npz_payload[f"pca_kmeans_k{int(n_clusters)}"] = km_labels
                     completed += 1
+                    _append_progress(
+                        progress_path,
+                        (
+                            f"pca_kmeans done | completed={completed}/{total_runs} "
+                            f"coupling={coupling:g} seed={seed} obs_design={obs_design} "
+                            f"k={n_clusters} elapsed={time.perf_counter() - start:.2f}s"
+                        ),
+                    )
                     LOGGER.info(
                         "Progress %d/%d | coupling=%g seed=%d %s pca_kmeans k=%d "
                         "ARI(block/slow/phase/joint)=%.2f/%.2f/%.2f/%.2f",
@@ -389,6 +458,14 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
                 )
                 completed += 1
                 np.savez(label_path, **npz_payload)
+                _append_progress(
+                    progress_path,
+                    (
+                        f"setting done | completed={completed}/{total_runs} "
+                        f"coupling={coupling:g} seed={seed} obs_design={obs_design} "
+                        f"label_file={label_path.name} elapsed={time.perf_counter() - setting_start:.2f}s"
+                    ),
+                )
 
     save_csv(csv_path, rows, append=False, fieldnames=fieldnames)
     save_json(
@@ -415,6 +492,10 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
         len(rows),
         csv_path,
         time.perf_counter() - sweep_start,
+    )
+    _append_progress(
+        progress_path,
+        f"sweep complete | rows={len(rows)} csv={csv_path.name} elapsed={time.perf_counter() - sweep_start:.1f}s",
     )
 
 
