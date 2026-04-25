@@ -42,6 +42,14 @@ def build_trial_level_frame(
     focus_start_ms: float,
     focus_end_ms: float,
 ) -> pd.DataFrame:
+    trial_scores = trial_scores.copy()
+    if not {"target_start_ms", "target_end_ms", "target_center_ms"}.issubset(
+        trial_scores.columns
+    ):
+        trial_scores["target_start_ms"] = float(focus_start_ms)
+        trial_scores["target_end_ms"] = float(focus_end_ms)
+        trial_scores["target_center_ms"] = 0.5 * (float(focus_start_ms) + float(focus_end_ms))
+
     if "group_kind" in trial_scores.columns:
         named_mask = trial_scores["group_kind"].astype(str) == "named_region"
         if named_mask.any():

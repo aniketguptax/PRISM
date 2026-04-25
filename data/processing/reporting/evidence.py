@@ -66,6 +66,13 @@ DEFAULT_MODEL_SPECS = (
         metrics=("pred_r2_obs",),
     ),
     EvidenceModelSpec(
+        name="baseline_central_augmented",
+        label="Baseline central augmented",
+        source="baseline",
+        regions=("central",),
+        metrics=("pred_r2_obs", "pred_mse_obs", "pred_r2_latent", "pred_nll_latent"),
+    ),
+    EvidenceModelSpec(
         name="baseline_frontal_r2",
         label="Baseline frontal R^2",
         source="baseline",
@@ -92,6 +99,13 @@ DEFAULT_MODEL_SPECS = (
         source="prism",
         regions=("central",),
         metrics=("pred_r2_obs",),
+    ),
+    EvidenceModelSpec(
+        name="prism_central_augmented",
+        label="PRISM central augmented",
+        source="prism",
+        regions=("central",),
+        metrics=("pred_r2_obs", "macro_logloss", "n_macro_states"),
     ),
     EvidenceModelSpec(
         name="prism_frontal_r2",
@@ -123,6 +137,14 @@ DEFAULT_MODEL_SPECS = (
         include_raw=True,
     ),
     EvidenceModelSpec(
+        name="raw_central_plus_baseline_central_augmented",
+        label="Raw central EEG + baseline augmented",
+        source="baseline",
+        regions=("central",),
+        metrics=("pred_r2_obs", "pred_mse_obs", "pred_r2_latent", "pred_nll_latent"),
+        include_raw=True,
+    ),
+    EvidenceModelSpec(
         name="raw_cf_plus_baseline_cf_augmented",
         label="Raw central+frontal EEG + baseline augmented",
         source="baseline",
@@ -136,6 +158,14 @@ DEFAULT_MODEL_SPECS = (
         source="prism",
         regions=("central", "frontal"),
         metrics=("pred_r2_obs",),
+        include_raw=True,
+    ),
+    EvidenceModelSpec(
+        name="raw_central_plus_prism_central_augmented",
+        label="Raw central EEG + PRISM augmented",
+        source="prism",
+        regions=("central",),
+        metrics=("pred_r2_obs", "macro_logloss", "n_macro_states"),
         include_raw=True,
     ),
     EvidenceModelSpec(
@@ -788,6 +818,7 @@ def fit_out_of_fold_evidence(
                 "trial_idx",
                 "sdt",
                 "confidence",
+                "stimamp",
                 "label",
                 "fold",
                 "model_name",
@@ -1042,6 +1073,9 @@ def run_evidence_summary(
             raise ValueError("No evidence model could be constructed from the requested inputs")
 
         trial_scores = pd.concat(model_tables, ignore_index=True)
+        trial_scores["target_start_ms"] = float(test_start_ms)
+        trial_scores["target_end_ms"] = float(test_end_ms)
+        trial_scores["target_center_ms"] = 0.5 * (float(test_start_ms) + float(test_end_ms))
         subject_summary = evaluate_subject_metrics(
             trial_scores,
             positive_sdt=positive_sdt,
