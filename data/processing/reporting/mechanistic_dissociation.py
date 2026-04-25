@@ -344,26 +344,79 @@ def build_mechanistic_report(
     detection_lme: pd.DataFrame,
     confidence_lme: pd.DataFrame,
     spearman_summary: pd.DataFrame,
+    raw_model: str,
+    hybrid_model: str,
+    baseline_aug_model: str,
     n_trials: int,
     n_subjects: int,
     n_hits: int,
     focus_start_ms: float,
     focus_end_ms: float,
 ) -> str:
+    is_prism = "prism" in hybrid_model or "prism" in baseline_aug_model
+    if is_prism:
+        augmentation_name = "continuous PRISM predictive-state"
+        opening = (
+            "We isolate the marginal contribution of the **continuous PRISM "
+            "predictive-state** features (pred_r2_obs, macro_logloss, n_macro_states) "
+            f"beyond the **post-stim baseline-corrected evoked response** ({raw_model} = "
+            "post-stim channel mean minus pre-stim channel mean). Per trial, the "
+            "augmentation contribution is `pred_fit_contrib = evidence_hybrid - "
+            "evidence_raw`. Subject-random-intercept linear mixed-effects models test "
+            "this contribution against detection, then against confidence on hits, with "
+            "stimulus amplitude partialled out as a fixed effect. This complements the "
+            "n=18 paired subject-mean tests with a trial-level test that has thousands "
+            "of degrees of freedom and proper random-subject structure."
+        )
+        interpretation = (
+            f"Because `{raw_model}` is itself the per-channel post-stim minus pre-stim "
+            "mean amplitude, the marginal contribution of the augmentation is by "
+            "construction independent of evoked amplitude. The PRISM features summarise "
+            "the continuous predictive-state model fitted to the -300 to 0 ms window and "
+            "evaluated on the post-stimulus test window, using observation prediction "
+            "fit, macrostate sequence log-loss, and macrostate count. The trial-level "
+            "mixed-effects result therefore claims: PRISM state summaries add "
+            "detection-linked information beyond raw central evoked amplitude and "
+            "stimulus amplitude. Because the confidence loading is weak here, this "
+            "should be framed as a PRISM EEG validation of detection-linked predictive "
+            "state structure, not as evidence that PRISM outperforms the stronger VAR "
+            "predictive-fit EEG baseline."
+        )
+    else:
+        augmentation_name = "pre-stim VAR predictive-fit"
+        opening = (
+            "We isolate the marginal contribution of the **pre-stimulus VAR "
+            "predictive-fit** features (pred_r2_obs, pred_mse_obs, pred_r2_latent, "
+            f"pred_nll_latent) beyond the **post-stim baseline-corrected evoked "
+            f"response** ({raw_model} = post-stim channel mean minus pre-stim channel "
+            "mean). Per trial, the augmentation contribution is `pred_fit_contrib = "
+            "evidence_hybrid - evidence_raw`. Subject-random-intercept linear "
+            "mixed-effects models test this contribution against detection, then "
+            "against confidence on hits, with stimulus amplitude partialled out as a "
+            "fixed effect. This complements the n=18 paired subject-mean tests with a "
+            "trial-level test that has thousands of degrees of freedom and proper "
+            "random-subject structure."
+        )
+        interpretation = (
+            f"Because `{raw_model}` is itself the per-channel post-stim minus pre-stim "
+            "mean amplitude, the marginal contribution of the augmentation is by "
+            "construction independent of evoked amplitude. The pre-stim VAR "
+            "predictive-fit metrics measure how well a VAR(1) model fit on the -300 "
+            "to 0 ms window predicts the post-stim test window, i.e. the degree to "
+            "which **stimulus-evoked dynamical disruption** breaks pre-stim "
+            "predictability. The trial-level mixed-effects result therefore claims: "
+            "pre-stim brain dynamics that are more disrupted by the stimulus are more "
+            "likely to yield a behavioural hit, with the central 125-375 ms cell also "
+            "carrying a weaker graded confidence signal on detected trials. This "
+            "dynamical-disruption signature is separable from evoked amplitude and "
+            "stimulus amplitude, but it should be framed as a graded perceptual-state "
+            "signal rather than a clean detection-only dissociation."
+        )
+
     lines = [
         "# Mechanistic Dissociation Summary",
         "",
-        (
-            "We isolate the marginal contribution of the **pre-stimulus VAR predictive-fit** "
-            "features (pred_r2_obs, pred_mse_obs, pred_r2_latent, pred_nll_latent) beyond the "
-            "**post-stim baseline-corrected evoked response** (raw_regions_delta = post-stim "
-            "channel mean minus pre-stim channel mean). Per trial, the augmentation contribution "
-            "is `pred_fit_contrib = evidence_hybrid - evidence_raw`. Subject-random-intercept "
-            "linear mixed-effects models test this contribution against detection, then against "
-            "confidence on hits, with stimulus amplitude partialled out as a fixed effect. This "
-            "complements the n=18 paired subject-mean tests with a trial-level test that has "
-            "thousands of degrees of freedom and proper random-subject structure."
-        ),
+        opening,
         "",
         f"Focus window: {int(focus_start_ms)}-{int(focus_end_ms)} ms central scalp.",
         f"Sample: {n_trials} trials across {n_subjects} subjects ({n_hits} hits).",
@@ -431,7 +484,7 @@ def build_mechanistic_report(
     if detection_row is not None:
         lines.append(
             f"- Detection LME beta on sdt_int = {detection_row['beta']:.4f} "
-            f"(p = {detection_row['p']:.3g}); the pre-stim VAR predictive-fit "
+            f"(p = {detection_row['p']:.3g}); the {augmentation_name} "
             f"contribution is **larger on hit trials than miss trials** even after "
             f"controlling for stimulus amplitude and subject-level baseline differences."
         )
@@ -459,11 +512,18 @@ def build_mechanistic_report(
         )
     if not paired_row.empty:
         prow = paired_row.iloc[0]
+        paired_p = float(prow["ttest_p_holm"])
+        if paired_p < 0.05:
+            paired_verdict = "This supports a within-subject detection-confidence dissociation."
+        else:
+            paired_verdict = (
+                "Here the positive mean difference is not significant, so the dissociation "
+                "claim rests on the trial-level detection effect and null confidence effect."
+            )
         lines.append(
             f"- Paired per-subject difference in Spearman-partial rhos "
             f"(detection minus confidence) = {prow['mean']:.3f}, "
-            f"paired t Holm p = {prow['ttest_p_holm']:.3g}. A positive value with "
-            f"small p indicates within-subject dissociation."
+            f"paired t Holm p = {paired_p:.3g}. {paired_verdict}"
         )
 
     lines.extend(
@@ -471,22 +531,7 @@ def build_mechanistic_report(
             "",
             "## Interpretation",
             "",
-            (
-                "Because `raw_regions_delta` is itself the per-channel post-stim minus "
-                "pre-stim mean amplitude, the marginal contribution of the augmentation "
-                "is by construction independent of evoked amplitude. The pre-stim VAR "
-                "predictive-fit metrics measure how well a VAR(1) model fit on the -300 "
-                "to 0 ms window predicts the post-stim test window — i.e. the degree to "
-                "which **stimulus-evoked dynamical disruption** breaks pre-stim "
-                "predictability. The trial-level mixed-effects result therefore claims: "
-                "pre-stim brain dynamics that are more disrupted by the stimulus are "
-                "more likely to yield a behavioural hit, with the central 125-375 ms "
-                "cell also carrying a weaker graded confidence signal on detected "
-                "trials. This dynamical-disruption signature is separable from evoked "
-                "amplitude and stimulus amplitude, but it should be framed as a graded "
-                "perceptual-state signal rather than a clean detection-only "
-                "dissociation."
-            ),
+            interpretation,
         ]
     )
 
@@ -531,6 +576,9 @@ def run_mechanistic_dissociation_summary(
             detection_lme=detection_lme,
             confidence_lme=confidence_lme,
             spearman_summary=spearman_summary,
+            raw_model=raw_model,
+            hybrid_model=hybrid_model,
+            baseline_aug_model=baseline_aug_model,
             n_trials=int(len(trial_frame)),
             n_subjects=int(trial_frame["subject"].nunique()),
             n_hits=n_hits,
