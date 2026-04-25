@@ -100,7 +100,7 @@ def panel_auc(ax: plt.Axes, group_summary: pd.DataFrame, pairwise: pd.DataFrame)
     ax.set_xticks(x)
     ax.set_xticklabels([MODEL_LABELS[name] for name in rows["model_name"]], fontsize=8.5)
     ax.set_ylabel("Subject mean held-out AUC")
-    ax.set_title("A  PRISM adds detection evidence", loc="left", fontweight="bold")
+    ax.set_title("A  Bounded AUC gain over raw EEG", loc="left", fontweight="bold")
     ax.grid(True, axis="y", color=LIGHT_GREY, linewidth=0.8)
     ax.spines[["top", "right"]].set_visible(False)
 
@@ -184,7 +184,7 @@ def panel_lme(ax: plt.Axes, detection_lme: pd.DataFrame, confidence_lme: pd.Data
     ax.set_yticklabels(rows["label"], fontsize=8.8)
     ax.invert_yaxis()
     ax.set_xlabel("PRISM contribution coefficient (95% CI)")
-    ax.set_title("B  Trial-level mixed effects", loc="left", fontweight="bold")
+    ax.set_title("B  Detection-linked PRISM contribution", loc="left", fontweight="bold")
     ax.grid(True, axis="x", color=LIGHT_GREY, linewidth=0.8)
     ax.spines[["top", "right"]].set_visible(False)
     xmin = min(float(rows["ci95_low"].min()), -0.004)
@@ -257,18 +257,23 @@ def build_figure(root: Path, outfile: Path) -> dict[str, float]:
     per_subject = _load_required(mech_dir / "per_subject_spearman_partial.csv")
     spearman_summary = _load_required(mech_dir / "spearman_dissociation_summary.csv")
 
+    plt.rcParams.update(
+        {
+            "font.size": 9,
+            "axes.titlesize": 10,
+            "axes.labelsize": 9,
+            "axes.linewidth": 0.8,
+            "xtick.labelsize": 8.5,
+            "ytick.labelsize": 8.5,
+            "savefig.dpi": 350,
+        }
+    )
+
     fig = plt.figure(figsize=(10.5, 6.8), constrained_layout=True)
     gs = fig.add_gridspec(2, 2, width_ratios=[1.1, 1.0], height_ratios=[1.0, 1.0])
     panel_auc(fig.add_subplot(gs[:, 0]), group_summary, pairwise)
     panel_lme(fig.add_subplot(gs[0, 1]), detection_lme, confidence_lme)
     panel_subjects(fig.add_subplot(gs[1, 1]), per_subject, spearman_summary)
-    fig.suptitle(
-        "Continuous PRISM recovers detection-linked predictive state structure in EEG",
-        fontsize=13.5,
-        fontweight="bold",
-        x=0.5,
-        y=1.02,
-    )
     outfile.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(outfile, dpi=300, bbox_inches="tight")
     fig.savefig(outfile.with_suffix(".pdf"), bbox_inches="tight")
@@ -311,20 +316,20 @@ def write_caption(numbers: dict[str, float], outfile: Path) -> None:
     caption = (
         "# EEG PRISM Figure Caption\n\n"
         "Continuous PRISM predictive-state summaries extracted from the pre-stimulus "
-        "central EEG window add significant hit-versus-miss evidence beyond the raw "
-        "central evoked response. Raw EEG plus PRISM improved held-out AUC by "
+        "central EEG window add bounded hit-versus-miss evidence beyond the raw "
+        "central evoked response. Raw EEG plus PRISM improves held-out AUC by "
         f"{numbers['raw_plus_prism_auc_gain']:+.3f} over raw EEG alone "
         f"(paired p={_format_p(numbers['raw_plus_prism_auc_p'])}), while the stronger "
-        "raw EEG plus VAR predictive-fit model improved AUC by "
+        "raw EEG plus VAR predictive-fit model improves AUC by "
         f"{numbers['raw_plus_var_auc_gain']:+.3f} "
         f"(paired p={_format_p(numbers['raw_plus_var_auc_p'])}). Trial-level mixed "
-        "effects confirmed that the PRISM contribution was larger on hit trials than "
+        "effects show that the PRISM contribution is larger on hit trials than "
         f"miss trials (beta={numbers['detection_beta']:+.4f}, "
         f"p={_format_p(numbers['detection_p'])}, n={int(numbers['n_trials'])} trials, "
         f"{int(numbers['n_subjects'])} subjects), whereas the confidence association "
         f"on hits was weak (beta={numbers['confidence_beta']:+.4f}, "
-        f"p={_format_p(numbers['confidence_p'])}). PRISM therefore provides a positive "
-        "EEG validation of detection-linked predictive state structure, but the VAR "
+        f"p={_format_p(numbers['confidence_p'])}). PRISM therefore provides a positive, "
+        "bounded EEG validation of detection-linked predictive-state structure, but the VAR "
         "predictive-fit baseline remains the stronger EEG evidence model."
     )
     outfile.write_text(caption + "\n")

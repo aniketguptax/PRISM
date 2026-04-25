@@ -33,6 +33,12 @@ BOX_BLUE = "#edf4fb"
 BOX_RED = "#fff2f1"
 
 
+def _style_axes(ax: plt.Axes) -> None:
+    ax.set_axisbelow(True)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.tick_params(length=3.0, width=0.7, color=MUTED)
+
+
 def _best_by(df: pd.DataFrame, metric: str, methods: list[str]) -> pd.DataFrame:
     rows = []
     for (obs_std, method), sub in df[df["method"].isin(methods)].groupby(["obs_std", "method"]):
@@ -125,7 +131,7 @@ def _box(ax: plt.Axes, xy: tuple[float, float], width: float, height: float, lab
         label,
         ha="center",
         va="center",
-        fontsize=6.4,
+        fontsize=6.2,
         color=INK,
         linespacing=1.12,
     )
@@ -194,6 +200,7 @@ def make_figure(root: Path) -> Path:
             "axes.titlesize": 8.8,
             "axes.labelsize": 7.7,
             "axes.linewidth": 0.8,
+            "axes.facecolor": "white",
             "xtick.labelsize": 6.8,
             "ytick.labelsize": 6.8,
             "legend.fontsize": 7.1,
@@ -211,6 +218,7 @@ def make_figure(root: Path) -> Path:
     axes[0, 1].set_ylabel("Best ARI vs slow state")
     axes[0, 1].grid(True, color=GRID, linewidth=0.6, alpha=0.7)
     axes[0, 1].legend(frameon=False, loc="center right", handlelength=1.8)
+    _style_axes(axes[0, 1])
 
     for method in ["kalman_predictive_kmeans", "obs_pca_kmeans", "history_kmeans"]:
         _plot_best_curve(axes[1, 0], best_fast, method)
@@ -218,6 +226,7 @@ def make_figure(root: Path) -> Path:
     axes[1, 0].set_xlabel("Observation noise")
     axes[1, 0].set_ylabel("Best ARI vs fast distractor")
     axes[1, 0].grid(True, color=GRID, linewidth=0.6, alpha=0.7)
+    _style_axes(axes[1, 0])
 
     sub = df[np.isclose(df["obs_std"], 0.25)]
     for method in ["kalman_predictive_kmeans", "obs_pca_kmeans", "history_kmeans"]:
@@ -235,6 +244,7 @@ def make_figure(root: Path) -> Path:
     axes[1, 1].set_xlabel("k")
     axes[1, 1].set_ylabel("ARI vs slow state")
     axes[1, 1].grid(True, color=GRID, linewidth=0.6, alpha=0.7)
+    _style_axes(axes[1, 1])
 
     outpath = outdir / "low_variance_lgssm_main.png"
     fig.savefig(outpath, bbox_inches="tight")

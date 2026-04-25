@@ -30,6 +30,12 @@ METHOD_LABELS = {
 }
 
 
+def _style_axes(ax: plt.Axes) -> None:
+    ax.set_axisbelow(True)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.tick_params(length=3.0, width=0.7, color=COLORS["muted"])
+
+
 def _best_by_noise(df: pd.DataFrame, metric: str, *, maximise: bool) -> pd.DataFrame:
     rows: list[dict[str, float | str]] = []
     for noise, sub in df.groupby("noise"):
@@ -91,10 +97,10 @@ def _plot_generator_schematic(ax: plt.Axes) -> None:
     ax.set_ylim(0, 1)
 
     boxes = [
-        (0.03, 0.60, 0.24, 0.19, "Coarse\nregime $C_t$\n(slow)", COLORS["box_alt"]),
-        (0.38, 0.60, 0.24, 0.19, "Fine\nphase $F_t$\n(fast)", COLORS["box"]),
-        (0.73, 0.60, 0.24, 0.19, "Observed\nsymbol $Y_t$\n(noisy)", COLORS["box"]),
-        (0.30, 0.22, 0.40, 0.17, "Future predictive\ndistribution\n$p(Y_{t+1:t+4}\\mid h_t)$", COLORS["box_alt"]),
+        (0.03, 0.58, 0.24, 0.22, "Coarse\nregime $C_t$\n(slow)", COLORS["box_alt"]),
+        (0.38, 0.58, 0.24, 0.22, "Fine\nphase $F_t$\n(fast)", COLORS["box"]),
+        (0.73, 0.58, 0.24, 0.22, "Observed\nsymbol $Y_t$\n(noisy)", COLORS["box"]),
+        (0.29, 0.21, 0.42, 0.19, "Future predictive\ndistribution\n$p(Y_{t+1:t+4}\\mid h_t)$", COLORS["box_alt"]),
     ]
     for x, y, w, h, label, facecolor in boxes:
         rect = FancyBboxPatch(
@@ -115,18 +121,18 @@ def _plot_generator_schematic(ax: plt.Axes) -> None:
             label,
             ha="center",
             va="center",
-            fontsize=6.8,
+            fontsize=6.6,
             linespacing=1.15,
             color=COLORS["ink"],
         )
 
     arrow = dict(arrowstyle="->", color=COLORS["ink"], linewidth=1.05, shrinkA=3, shrinkB=3)
-    ax.annotate("", xy=(0.38, 0.695), xytext=(0.27, 0.695), arrowprops=arrow)
-    ax.annotate("", xy=(0.73, 0.695), xytext=(0.62, 0.695), arrowprops=arrow)
-    ax.annotate("", xy=(0.50, 0.40), xytext=(0.50, 0.60), arrowprops=arrow)
-    ax.text(0.325, 0.805, "sets dynamics", ha="center", va="bottom", fontsize=5.3, color=COLORS["muted"])
-    ax.text(0.675, 0.805, "emits", ha="center", va="bottom", fontsize=5.3, color=COLORS["muted"])
-    ax.text(0.527, 0.50, "predicts", ha="left", va="center", fontsize=5.3, color=COLORS["muted"])
+    ax.annotate("", xy=(0.38, 0.69), xytext=(0.27, 0.69), arrowprops=arrow)
+    ax.annotate("", xy=(0.73, 0.69), xytext=(0.62, 0.69), arrowprops=arrow)
+    ax.annotate("", xy=(0.50, 0.40), xytext=(0.50, 0.58), arrowprops=arrow)
+    ax.text(0.325, 0.81, "sets dynamics", ha="center", va="bottom", fontsize=5.3, color=COLORS["muted"])
+    ax.text(0.675, 0.81, "emits", ha="center", va="bottom", fontsize=5.3, color=COLORS["muted"])
+    ax.text(0.527, 0.49, "predicts", ha="left", va="center", fontsize=5.3, color=COLORS["muted"])
     ax.text(
         0.50,
         0.075,
@@ -159,6 +165,7 @@ def _plot_best_curves(ax: plt.Axes, best: pd.DataFrame, metric: str, ylabel: str
     ax.set_xticks(best["noise"])
     ax.set_xticklabels([f"{value:.2f}" for value in best["noise"]])
     ax.grid(True, color=COLORS["grid"], linewidth=0.6, alpha=0.7)
+    _style_axes(ax)
     if metric == "ari_joint":
         ax.set_ylim(0.0, 0.45)
     else:
@@ -196,6 +203,7 @@ def _plot_scale_path(df: pd.DataFrame, ax_left: plt.Axes) -> None:
     ax_left.set_xticks(sorted(grouped["method_param"].unique()))
     ax_left.grid(True, color=COLORS["grid"], linewidth=0.6, alpha=0.7)
     ax_left.legend(fontsize=6.8, frameon=False, loc="lower left")
+    _style_axes(ax_left)
 
     ax_right = ax_left.twinx()
     state_means = grouped.groupby("method_param", as_index=False)["n_states"].mean()
@@ -211,6 +219,7 @@ def _plot_scale_path(df: pd.DataFrame, ax_left: plt.Axes) -> None:
     )
     ax_right.set_ylabel("Mean state count")
     ax_right.tick_params(axis="y", labelcolor="#4b4f54")
+    ax_right.spines[["top"]].set_visible(False)
 
 
 def make_figure(root: Path) -> Path:
@@ -228,6 +237,7 @@ def make_figure(root: Path) -> Path:
             "axes.titlesize": 8.8,
             "axes.labelsize": 8,
             "axes.linewidth": 0.8,
+            "axes.facecolor": "white",
             "legend.fontsize": 7.4,
             "xtick.labelsize": 6.7,
             "ytick.labelsize": 6.7,
