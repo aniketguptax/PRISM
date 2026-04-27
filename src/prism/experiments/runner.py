@@ -368,7 +368,7 @@ def run_experiment(
                 dot = to_dot(
                     edges,
                     graph_name=f"{process.name}_{rep.name}_seed{seed}",
-                    label=f"{process.name} | {rep.name} | seed={seed} | {condition_id}",
+                    label=None,
                     style=DotStyle(rankdir="LR"),
                 )
                 save_dot(dot_path, dot)

@@ -25,3 +25,4 @@ src/results/hierarchical_predictive_smoke*/
 src/results/hierarchical_predictive_sweep/
 src/results/hierarchical_switching_smoke*/
 src/results/low_variance_lgssm_smoke*/
+.pytest_cache/

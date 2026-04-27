@@ -1,2 +1,0 @@
-base_process,projection_mode,flip_p,subsample_step,k,dv,logloss_mean,logloss_std,gaussian_logloss_mean,gaussian_logloss_std,macro_logloss_mean,macro_logloss_std,n_states_mean,n_states_std,C_mu_empirical_mean,C_mu_empirical_std,unifilarity_score_mean,unifilarity_score_std,branch_entropy_mean,branch_entropy_std,psi_opt_mean,psi_opt_std
-linear_gaussian_ssm,pca,0.0,1,2,2,1.3030869009875503,0.0,1.3030869009875503,0.0,13.159745371337412,0.0,105.0,0.0,4.468949172003949,0.0,0.7412060301507538,0.0,0.6174921468095457,0.0,-0.7895376296407637,0.0

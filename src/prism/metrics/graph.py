@@ -19,36 +19,40 @@ class DotStyle:
     overlap: str = "false"
     concentrate: str = "false"
     outputorder: str = "edgesfirst"
-    nodesep: float = 0.9
-    ranksep: float = 1.1
-    pad: float = 0.25
+    nodesep: float = 1.3
+    ranksep: float = 1.6
+    pad: float = 0.45
 
-    # Extra spacing around nodes/edges to reduce “edge swallowed by node” cases.
-    sep: str = "+10,10"
-    esep: str = "+10,10"
+    # Extra spacing around nodes/edges so labels can settle clear of splines
+    # (graphviz uses these as soft padding when routing).
+    sep: str = "+18,18"
+    esep: str = "+18,18"
 
     fontname: str = "Helvetica"
-    font_colour: str = "#222222"
+    font_colour: str = "#1f2933"
     graph_fontsize: int = 18
-    node_fontsize: int = 15
-    edge_fontsize: int = 12
+    node_fontsize: int = 22
+    edge_fontsize: int = 13
 
-    node_shape: str = "circle"
+    node_shape: str = "ellipse"
     node_fixedsize: bool = True
     node_width: float = 0.95
-    node_height: float = 0.95
-    node_penwidth: float = 1.8
-    node_margin: float = 0.06
-    node_colour: str = "#222222"
+    node_height: float = 0.75
+    node_penwidth: float = 1.5
+    node_margin: float = 0.10
+    node_colour: str = "#1f2933"
     node_font_colour: Optional[str] = None
+    node_style: str = "filled"
+    node_fillcolour: str = "#eef2f7"
 
-    arrowsize: float = 1.25
-    edge_penwidth: float = 1.4
-    edge_colour: str = "#222222"
+    arrowsize: float = 0.9
+    edge_penwidth: float = 1.2
+    edge_colour: str = "#374151"
     edge_font_colour: Optional[str] = None
 
-    # label placement on the edge (NOT external labels)
-    labelfloat: str = "true"
+    # When false, graphviz tries to keep edge labels from sitting on top of
+    # other edges (at the cost of wider layouts). True allows looser placement.
+    labelfloat: str = "false"
     labeldistance: float = 2.6
     labelangle: float = 28.0
 
@@ -60,22 +64,35 @@ class DotStyle:
 
     selfloop_minlen: int = 2
 
+    # All transition probabilities render at fixed 3-dp precision (including
+    # 0.000 and 1.000) so deterministic and stochastic edges read consistently.
     prob_precision: int = 3
     strip_trailing_zeros: bool = False
     clamp_probabilities: bool = True
     prob_epsilon: float = 1e-12
+    # Always emit "<sym>: <prob>" so deterministic transitions still show the
+    # 1.000 (Nature-style consistency); set True for symbol-only collapse.
+    hide_unit_probability: bool = False
 
     state_prefix: str = "S"
+    # Render state labels with an italic letter and subscript index (S_0 style).
+    italic_state_subscript: bool = True
 
-    # If True: use xlabel (external, floating) so labels don’t collide with splines.
-    use_external_edge_labels: bool = True
+    # If True: use xlabel (external, floating) — labels can land anywhere and
+    # may sit on top of unrelated splines. If False: use inline `label`, so
+    # graphviz splits the owning edge spline around the label and other edges
+    # have to route clear of it. False is the publication-ready choice.
+    use_external_edge_labels: bool = False
 
-    # Use HTML table labels (enables white background behind label text).
+    # Use HTML table labels. Backgrounds are kept transparent so overlapping
+    # splines stay visible underneath instead of being chopped by white boxes.
     use_html_labels: bool = True
-    label_cellpadding: int = 1
+    label_cellpadding: int = 2
     label_cellspacing: int = 0
     label_cellborder: int = 0
     label_symbol_bold: bool = True
+    # "none" => transparent label background; any colour string => filled card.
+    label_bgcolour: str = "none"
 
 
 def to_edge_list(model: TransitionModel) -> List[Edge]:
@@ -178,6 +195,14 @@ def to_dot(
             return str(state_names[state])
         return f"{st.state_prefix}{state}" if st.state_prefix else str(state)
 
+    def state_label_html(state: int) -> Optional[str]:
+        """HTML state label as an italic letter with a subscript index, e.g. <I>S</I><SUB>0</SUB>."""
+        if not st.italic_state_subscript or not st.state_prefix:
+            return None
+        if state_names and state in state_names:
+            return None
+        return f"<<I>{_escape_html(st.state_prefix)}</I><SUB>{state}</SUB>>"
+
     tail_base, head_base = _ports_for_rankdir(st.rankdir)
     is_lr = st.rankdir.upper() in ("LR", "RL")
 
@@ -212,6 +237,9 @@ def to_dot(
         f'fontcolor="{st.node_font_colour or st.font_colour}"',
         f"margin={st.node_margin}",
     ]
+    if st.node_style:
+        node_attrs.append(f'style="{st.node_style}"')
+        node_attrs.append(f'fillcolor="{st.node_fillcolour}"')
     if st.node_fixedsize:
         node_attrs += ["fixedsize=true", f"width={st.node_width}", f"height={st.node_height}"]
     lines.append(f"  node [{', '.join(node_attrs)}];")
@@ -235,16 +263,23 @@ def to_dot(
         lines.append("  labeljust=l;")
 
     for n in nodes:
-        lines.append(f'  {n} [label="{_escape_dot(state_name(n))}"];')
+        html_label = state_label_html(n)
+        if html_label is not None:
+            lines.append(f"  {n} [label={html_label}];")
+        else:
+            lines.append(f'  {n} [label="{_escape_dot(state_name(n))}"];')
 
     def build_label(symps: List[Tuple[int, float]]) -> Tuple[Optional[str], bool]:
-        rows_out: List[Tuple[str, str]] = []
+        rows_out: List[Tuple[str, Optional[str]]] = []
         for sym, p in symps:
             cp = _clean_prob(p, st.clamp_probabilities, st.prob_epsilon)
             if cp is None:
                 continue
-            prob_text = _format_prob(cp, st.prob_precision, st.strip_trailing_zeros)
-            rows_out.append((sym_name(sym), prob_text))
+            if st.hide_unit_probability and cp == 1.0:
+                rows_out.append((sym_name(sym), None))
+            else:
+                prob_text = _format_prob(cp, st.prob_precision, st.strip_trailing_zeros)
+                rows_out.append((sym_name(sym), prob_text))
 
         if not rows_out:
             return None, False
@@ -255,23 +290,35 @@ def to_dot(
                 s_esc = _escape_html(sym_text)
                 if st.label_symbol_bold:
                     s_esc = f"<B>{s_esc}</B>"
-                rows.append(
-                    "<TR>"
-                    f'<TD ALIGN="RIGHT">{s_esc}:</TD>'
-                    f'<TD ALIGN="LEFT">{_escape_html(prob_text)}</TD>'
-                    "</TR>"
-                )
+                if prob_text is None:
+                    rows.append(
+                        "<TR>"
+                        f'<TD ALIGN="CENTER" COLSPAN="2">{s_esc}</TD>'
+                        "</TR>"
+                    )
+                else:
+                    rows.append(
+                        "<TR>"
+                        f'<TD ALIGN="RIGHT">{s_esc}:</TD>'
+                        f'<TD ALIGN="LEFT">{_escape_html(prob_text)}</TD>'
+                        "</TR>"
+                    )
+            bg_attr = (
+                f' BGCOLOR="{st.label_bgcolour}"'
+                if st.label_bgcolour and st.label_bgcolour.lower() != "none"
+                else ""
+            )
             table = (
                 f'<TABLE BORDER="0" CELLBORDER="{st.label_cellborder}" '
                 f'CELLSPACING="{st.label_cellspacing}" '
-                f'CELLPADDING="{st.label_cellpadding}" '
-                f'BGCOLOR="white">'
+                f'CELLPADDING="{st.label_cellpadding}"'
+                f"{bg_attr}>"
                 f'{"".join(rows)}'
                 f"</TABLE>"
             )
             return f"<{table}>", True
 
-        text = "\\n".join(f"{s}: {p}" for s, p in rows_out)
+        text = "\\n".join(s if p is None else f"{s}: {p}" for s, p in rows_out)
         return _escape_dot(text), False
 
     def _pmax(symps: List[Tuple[int, float]]) -> float:
@@ -302,32 +349,19 @@ def to_dot(
             lines.append(f"  {s} -> {sp} [{', '.join(attrs)}];")
             continue
 
-        # Reciprocal separation
+        # Reciprocal separation: split parallel edges with `dir=both`-friendly
+        # routing instead of forcing compass ports. Forced ports (e.g. ne/nw)
+        # only render correctly if graphviz actually places s to the left of sp;
+        # for back-edges that are not the case, so the arrowhead can land on
+        # the wrong end. Letting graphviz choose the ports keeps the direction
+        # honest at the cost of slightly less symmetric routing.
         a, b = (s, sp) if s < sp else (sp, s)
         is_recip = (a, b) in reciprocal_undirected
         if is_recip:
-            if is_lr:
-                if s == a and sp == b:
-                    tailport, headport = "ne", "nw"
-                    angle = +abs(st.reciprocal_labelangle)
-                else:
-                    tailport, headport = "se", "sw"
-                    angle = -abs(st.reciprocal_labelangle)
-            else:
-                if s == a and sp == b:
-                    tailport, headport = "n", "n"
-                    angle = +abs(st.reciprocal_labelangle)
-                else:
-                    tailport, headport = "s", "s"
-                    angle = -abs(st.reciprocal_labelangle)
-
             attrs = [
-                f"tailport={tailport}",
-                f"headport={headport}",
                 f"minlen={st.reciprocal_minlen}",
                 f"weight={st.reciprocal_weight}",
                 f"labeldistance={st.reciprocal_labeldistance}",
-                f"labelangle={angle}",
             ]
 
             if st.use_external_edge_labels:
@@ -345,16 +379,14 @@ def to_dot(
             lines.append(f"  {s} -> {sp} [{', '.join(attrs)}];")
             continue
 
-        # Normal directed edge
-        attrs = [
-            f"tailport={tail_base}",
-            f"headport={head_base}",
-        ]
+        # Normal directed edge — let graphviz choose ports so arrowheads always
+        # land at sp regardless of left/right placement.
+        attrs = []
 
         # Keep edges visible: give dot routing room; boost “important” edges.
         pm = _pmax(symps)
         if pm >= 0.5:
-            attrs += ["minlen=3", "weight=3"]
+            attrs += ["minlen=2", "weight=3"]
         else:
             attrs += ["minlen=2", "weight=2"]
 

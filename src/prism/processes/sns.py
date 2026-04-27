@@ -3,8 +3,6 @@ from .protocols import Process, Sample
 
 class SimpleNonUnifilarSource(Process):
     """
-    A simple non-unifilar HMM (SNS-like) over binary observations.
-
     Hidden states: A, B
     From A:
         emit 0 and go to A with prob p
@@ -12,9 +10,6 @@ class SimpleNonUnifilarSource(Process):
     From B:
         emit 0 and go to A with prob q
         emit 1 and go to B with prob (1-q)
-
-    The observation '0' does not uniquely determine next hidden state history, leading to
-    non-unifilar predictive structure in general.
     """
     @property
     def name(self) -> str:
