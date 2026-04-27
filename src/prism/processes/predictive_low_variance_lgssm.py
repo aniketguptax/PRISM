@@ -21,14 +21,6 @@ def _as_latent_rows(matrix: np.ndarray) -> list[LatentState]:
 
 @dataclass(frozen=True)
 class PredictiveLowVarianceLGSSM(Process):
-    """Linear-Gaussian benchmark where prediction and variance disagree.
-
-    The first latent component is slow, low variance, and strongly predictive.
-    The remaining components are high variance but weakly self-predictive. Raw
-    PCA therefore tends to track distractor variance, whereas a Kalman predictive
-    state should preserve the slow component.
-    """
-
     slow_a: float = 0.985
     fast_a: float = 0.15
     slow_process_std: float = 0.10

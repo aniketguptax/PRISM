@@ -20,14 +20,6 @@ def _as_latent_rows(coarse: np.ndarray, fine: np.ndarray) -> list[LatentState]:
 
 @dataclass(frozen=True)
 class HierarchicalPredictiveHMM(Process):
-    """Discrete HMM whose hidden state has known coarse and fine predictive scales.
-
-    The coarse state is slow and controls the fine-state dynamics. Instantaneous
-    emissions are shared across coarse states, so the coarse state is not a
-    simple variance or symbol-frequency label. It is instead revealed by how the
-    recent observed fine phase predicts the future.
-    """
-
     n_coarse: int = 3
     n_fine: int = 4
     alphabet_size: int = 6

@@ -29,14 +29,6 @@ def _as_latent_rows(coarse: np.ndarray, fine: np.ndarray) -> list[LatentState]:
 
 @dataclass(frozen=True)
 class HierarchicalSwitchingGaussian(Process):
-    """Continuous observations with hidden predictive hierarchy.
-
-    The fine phase determines the instantaneous Gaussian emission. The coarse
-    regime is not present as a separate emission offset; instead it controls the
-    direction and speed of fine-phase dynamics. This makes the joint hidden state
-    a predictive object rather than a direct observation cluster.
-    """
-
     n_coarse: int = 3
     n_fine: int = 4
     obs_dim: int = 8

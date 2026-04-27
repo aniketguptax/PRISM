@@ -174,8 +174,6 @@ def _compute_psi_with_backoff(
 
 @dataclass(frozen=True)
 class MacroQuantiser:
-    """Per-dimension bin edges for symbolising macro observations."""
-
     edges: tuple[Array, ...]
     radices: tuple[int, ...]
 

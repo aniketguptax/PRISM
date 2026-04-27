@@ -6,7 +6,6 @@ from .protocols import Process, Sample, Obs
 
 
 def _ensure_binary_ints(x: Sequence[Obs], *, name: str) -> List[int]:
-    """Ensure observations are ints in {0,1}"""
     out: List[int] = []
     for i, v in enumerate(x):
         if isinstance(v, bool):
