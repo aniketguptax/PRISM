@@ -22,8 +22,11 @@ from experiments.models import (
 )
 from experiments.spatial import (
     DEFAULT_REGION_ORDER,
-    build_channel_groups,
-    build_size_matched_control_groups,
+    RegionGroup,
+    add_region_metadata,
+    build_control_region_groups,
+    rep_dims_for_group,
+    select_region_groups,
 )
 from experiments.temporal import (
     DEFAULT_BASELINE_TRAIN_END_MS,
@@ -420,6 +423,22 @@ def basic_trial_metrics(X: np.ndarray) -> dict:
     }
 
 
+def subject_seed(key: str, *, base: int = 0) -> int:
+    return int(base + sum(ord(char) for char in key))
+
+
+def load_requested_region_groups(
+    subject: str,
+    config: dict,
+) -> tuple[list[str], tuple[RegionGroup, ...]]:
+    channel_labels = load_subject_channel_labels(
+        subject,
+        derivatives_dir=config["derivatives_dir"],
+    )
+    selected_groups = select_region_groups(channel_labels, config["regions"])
+    return channel_labels, selected_groups
+
+
 def add_multiscale_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--durations-ms",
@@ -791,41 +810,25 @@ def make_region_sliding_iss_evaluator(config: dict, inpath: Path):
         )
 
     subject = extract_subject_id(inpath)
-    channel_labels = load_subject_channel_labels(
-        subject,
-        derivatives_dir=config["derivatives_dir"],
-    )
-    named_groups = build_channel_groups(channel_labels)
-    selected_groups = {
-        region_name: named_groups[region_name]
-        for region_name in config["regions"]
-        if region_name in named_groups
-    }
-    if not selected_groups:
-        raise ValueError(
-            "No valid channel groups were selected. Available groups are: "
-            + ", ".join(named_groups.keys())
-        )
-
-    control_groups = build_size_matched_control_groups(
+    channel_labels, selected_groups = load_requested_region_groups(subject, config)
+    control_groups = build_control_region_groups(
         channel_labels,
         selected_groups,
         n_draws=config["random_control_draws"],
-        random_state=int(config["random_state"] + sum(ord(char) for char in subject)),
+        random_state=subject_seed(subject, base=config["random_state"]),
     )
+    all_groups = (*selected_groups, *control_groups)
 
     def evaluate_trial_fn(X: np.ndarray, times: np.ndarray) -> list[dict]:
         rows: list[dict] = []
 
-        def evaluate_group(region_name: str, region_idx: np.ndarray) -> list[dict]:
-            region_rep_dims = tuple(
-                dim for dim in config["rep_dims"] if int(dim) <= int(region_idx.size)
-            )
+        def evaluate_group(group: RegionGroup) -> list[dict]:
+            region_rep_dims = rep_dims_for_group(config["rep_dims"], group)
             if not region_rep_dims:
                 return []
 
             return evaluate_trial_iss_baseline_sliding(
-                X[:, region_idx],
+                X[:, group.indices],
                 times_ms=times,
                 rep_dims=region_rep_dims,
                 train_start_ms=config["train_start_ms"],
@@ -840,26 +843,14 @@ def make_region_sliding_iss_evaluator(config: dict, inpath: Path):
                 allow_time_varying_fallback=config["allow_time_varying_fallback"],
             )
 
-        for region_name, region_idx in selected_groups.items():
-            region_rows = evaluate_group(region_name, region_idx)
-            for row in region_rows:
-                row["region_name"] = region_name
-                row["group_kind"] = "named_region"
-                row["matched_region_name"] = region_name
-                row["control_draw_idx"] = np.nan
-                row["n_region_channels"] = int(region_idx.size)
-            rows.extend(region_rows)
-
-        for (matched_region_name, draw_idx), region_idx in control_groups.items():
-            region_rows = evaluate_group(matched_region_name, region_idx)
-            control_name = f"{matched_region_name}_control_{draw_idx:02d}"
-            for row in region_rows:
-                row["region_name"] = control_name
-                row["group_kind"] = "size_matched_control"
-                row["matched_region_name"] = matched_region_name
-                row["control_draw_idx"] = int(draw_idx)
-                row["n_region_channels"] = int(region_idx.size)
-            rows.extend(region_rows)
+        for group in all_groups:
+            rows.extend(
+                add_region_metadata(
+                    evaluate_group(group),
+                    group,
+                    include_control_fields=True,
+                )
+            )
 
         return rows
 
@@ -950,28 +941,14 @@ def make_region_sliding_evaluator(config: dict, inpath: Path):
         raise ValueError("--train-start-ms and --train-end-ms must be set together")
 
     subject = extract_subject_id(inpath)
-    channel_labels = load_subject_channel_labels(
-        subject,
-        derivatives_dir=config["derivatives_dir"],
-    )
-    named_groups = build_channel_groups(channel_labels)
-    selected_groups = {
-        region_name: named_groups[region_name]
-        for region_name in config["regions"]
-        if region_name in named_groups
-    }
-    if not selected_groups:
-        raise ValueError(
-            "No valid channel groups were selected. Available groups are: "
-            + ", ".join(named_groups.keys())
-        )
-
-    control_groups = build_size_matched_control_groups(
+    channel_labels, selected_groups = load_requested_region_groups(subject, config)
+    control_groups = build_control_region_groups(
         channel_labels,
         selected_groups,
         n_draws=config["random_control_draws"],
-        random_state=int(config["random_state"] + sum(ord(char) for char in subject)),
+        random_state=subject_seed(subject, base=config["random_state"]),
     )
+    all_groups = (*selected_groups, *control_groups)
 
     def evaluate_trial_fn(X: np.ndarray, times: np.ndarray) -> list[dict]:
         rows: list[dict] = []
@@ -979,16 +956,14 @@ def make_region_sliding_evaluator(config: dict, inpath: Path):
             config["train_start_ms"] is not None and config["train_end_ms"] is not None
         )
 
-        def evaluate_group(region_name: str, region_idx: np.ndarray) -> list[dict]:
-            region_rep_dims = tuple(
-                dim for dim in config["rep_dims"] if int(dim) <= int(region_idx.size)
-            )
+        def evaluate_group(group: RegionGroup) -> list[dict]:
+            region_rep_dims = rep_dims_for_group(config["rep_dims"], group)
             if not region_rep_dims:
                 return []
 
             if uses_fixed_baseline:
                 return evaluate_trial_baseline_sliding(
-                    X[:, region_idx],
+                    X[:, group.indices],
                     times_ms=times,
                     rep_dims=region_rep_dims,
                     train_start_ms=config["train_start_ms"],
@@ -1000,7 +975,7 @@ def make_region_sliding_evaluator(config: dict, inpath: Path):
                 )
 
             return evaluate_trial_sliding_context(
-                X[:, region_idx],
+                X[:, group.indices],
                 times_ms=times,
                 rep_dims=region_rep_dims,
                 history_ms=config["history_ms"],
@@ -1010,26 +985,14 @@ def make_region_sliding_evaluator(config: dict, inpath: Path):
                 target_start_max_ms=config["target_start_max_ms"],
             )
 
-        for region_name, region_idx in selected_groups.items():
-            region_rows = evaluate_group(region_name, region_idx)
-            for row in region_rows:
-                row["region_name"] = region_name
-                row["group_kind"] = "named_region"
-                row["matched_region_name"] = region_name
-                row["control_draw_idx"] = np.nan
-                row["n_region_channels"] = int(region_idx.size)
-            rows.extend(region_rows)
-
-        for (matched_region_name, draw_idx), region_idx in control_groups.items():
-            region_rows = evaluate_group(matched_region_name, region_idx)
-            control_name = f"{matched_region_name}_control_{draw_idx:02d}"
-            for row in region_rows:
-                row["region_name"] = control_name
-                row["group_kind"] = "size_matched_control"
-                row["matched_region_name"] = matched_region_name
-                row["control_draw_idx"] = int(draw_idx)
-                row["n_region_channels"] = int(region_idx.size)
-            rows.extend(region_rows)
+        for group in all_groups:
+            rows.extend(
+                add_region_metadata(
+                    evaluate_group(group),
+                    group,
+                    include_control_fields=True,
+                )
+            )
 
         return rows
 
@@ -1037,8 +1000,8 @@ def make_region_sliding_evaluator(config: dict, inpath: Path):
 
 
 def make_control_evaluator(config: dict, inpath: Path):
-    subject_seed = int(config["random_state"] + sum(ord(char) for char in inpath.stem))
-    trial_seed_rng = np.random.default_rng(subject_seed)
+    base_seed = subject_seed(inpath.stem, base=config["random_state"])
+    trial_seed_rng = np.random.default_rng(base_seed)
 
     def evaluate_trial_fn(X: np.ndarray, _times: np.ndarray) -> list[dict]:
         trial_seed = int(trial_seed_rng.integers(0, np.iinfo(np.int32).max))
@@ -1054,8 +1017,8 @@ def make_control_evaluator(config: dict, inpath: Path):
 
 
 def make_prism_evaluator(config: dict, inpath: Path):
-    subject_seed = int(config["random_state"] + sum(ord(char) for char in inpath.stem))
-    trial_seed_rng = np.random.default_rng(subject_seed)
+    base_seed = subject_seed(inpath.stem, base=config["random_state"])
+    trial_seed_rng = np.random.default_rng(base_seed)
 
     def evaluate_trial_fn(X: np.ndarray, _times: np.ndarray) -> list[dict]:
         trial_seed = int(trial_seed_rng.integers(0, np.iinfo(np.int32).max))
@@ -1079,8 +1042,8 @@ def make_prism_evaluator(config: dict, inpath: Path):
 
 
 def make_prism_window_evaluator(config: dict, inpath: Path):
-    subject_seed = int(config["random_state"] + sum(ord(char) for char in inpath.stem))
-    trial_seed_rng = np.random.default_rng(subject_seed)
+    base_seed = subject_seed(inpath.stem, base=config["random_state"])
+    trial_seed_rng = np.random.default_rng(base_seed)
 
     def evaluate_trial_fn(X: np.ndarray, times: np.ndarray) -> list[dict]:
         trial_seed = int(trial_seed_rng.integers(0, np.iinfo(np.int32).max))
@@ -1109,39 +1072,22 @@ def make_prism_window_evaluator(config: dict, inpath: Path):
 
 def make_prism_region_window_evaluator(config: dict, inpath: Path):
     subject = extract_subject_id(inpath)
-    channel_labels = load_subject_channel_labels(
-        subject,
-        derivatives_dir=config["derivatives_dir"],
-    )
-    named_groups = build_channel_groups(channel_labels)
-    selected_groups = {
-        region_name: named_groups[region_name]
-        for region_name in config["regions"]
-        if region_name in named_groups
-    }
-    if not selected_groups:
-        raise ValueError(
-            "No valid channel groups were selected. Available groups are: "
-            + ", ".join(named_groups.keys())
-        )
-
-    subject_seed = int(config["random_state"] + sum(ord(char) for char in inpath.stem))
-    trial_seed_rng = np.random.default_rng(subject_seed)
+    _channel_labels, selected_groups = load_requested_region_groups(subject, config)
+    base_seed = subject_seed(inpath.stem, base=config["random_state"])
+    trial_seed_rng = np.random.default_rng(base_seed)
 
     def evaluate_trial_fn(X: np.ndarray, times: np.ndarray) -> list[dict]:
         trial_seed = int(trial_seed_rng.integers(0, np.iinfo(np.int32).max))
         rows: list[dict] = []
 
-        for region_name, region_idx in selected_groups.items():
-            region_rep_dims = tuple(
-                dim for dim in config["rep_dims"] if int(dim) <= int(region_idx.size)
-            )
+        for group in selected_groups:
+            region_rep_dims = rep_dims_for_group(config["rep_dims"], group)
             if not region_rep_dims:
                 continue
 
-            region_seed = int(trial_seed + sum(ord(char) for char in region_name))
+            region_seed = subject_seed(group.name, base=trial_seed)
             region_rows = evaluate_trial_prism_window(
-                X[:, region_idx],
+                X[:, group.indices],
                 times_ms=times,
                 rep_dims=region_rep_dims,
                 projection_modes=config["projection_modes"],
@@ -1159,10 +1105,7 @@ def make_prism_region_window_evaluator(config: dict, inpath: Path):
                 allow_time_varying_fallback=config["allow_time_varying_fallback"],
                 random_state=region_seed,
             )
-            for row in region_rows:
-                row["region_name"] = region_name
-                row["n_region_channels"] = int(region_idx.size)
-            rows.extend(region_rows)
+            rows.extend(add_region_metadata(region_rows, group))
 
         return rows
 
