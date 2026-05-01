@@ -18,7 +18,7 @@ from eegprep import (
     load_subject_channel_labels,
 )
 from experiments.models import fit_iss_label_chains
-from experiments.registry import build_channel_groups
+from experiments.spatial import select_region_groups
 from framework.runtime import (
     add_all_subjects_argument,
     add_max_trials_argument,
@@ -57,17 +57,10 @@ def _process_subject(
     n_trials = data.shape[0]
 
     channel_labels = load_subject_channel_labels(subject, derivatives_dir=derivatives_dir)
-    named_groups = build_channel_groups(channel_labels)
-    selected_groups = {
-        region_name: named_groups[region_name]
-        for region_name in regions
-        if region_name in named_groups
-    }
-    if not selected_groups:
-        raise ValueError(
-            "None of the requested regions were available for "
-            f"{subject}. Available groups: {', '.join(sorted(named_groups))}"
-        )
+    try:
+        selected_groups = select_region_groups(channel_labels, regions)
+    except ValueError as exc:
+        raise ValueError(f"{subject}: {exc}") from exc
 
     saved = 0
     rng = np.random.default_rng(sum(ord(c) for c in subject))
@@ -84,8 +77,8 @@ def _process_subject(
             mask_train = (times_ms >= tr_start) & (times_ms <= tr_end)
             train_window = trial[mask_train]  # (T_train, channels)
 
-            for region_name, ch_idx in selected_groups.items():
-                X_region = train_window[:, ch_idx]
+            for group in selected_groups:
+                X_region = train_window[:, group.indices]
 
                 seed = int(rng.integers(0, np.iinfo(np.int32).max))
                 chains = fit_iss_label_chains(
@@ -103,7 +96,7 @@ def _process_subject(
                 arrays: dict[str, np.ndarray] = {
                     "subject":     np.array(subject),
                     "trial_idx":   np.array(trial_idx, dtype=int),
-                    "region_name": np.array(region_name),
+                    "region_name": np.array(group.name),
                     "window_name": np.array(window_name),
                     "hit":         np.array(hit, dtype=int),
                     "confidence":  np.array(confidence),
@@ -113,7 +106,10 @@ def _process_subject(
                     key = f"labels_eps{eps:.4f}".rstrip("0").rstrip(".")
                     arrays[key] = labels.astype(np.int16)
 
-                fname = outdir / f"trial_{subject}_{region_name}_{window_name}_{trial_idx:05d}.npz"
+                fname = (
+                    outdir
+                    / f"trial_{subject}_{group.name}_{window_name}_{trial_idx:05d}.npz"
+                )
                 np.savez_compressed(fname, **arrays)
                 saved += 1
 
