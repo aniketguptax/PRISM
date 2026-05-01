@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from functools import lru_cache
 import math
 from pathlib import Path
 import sys
@@ -16,6 +18,14 @@ DEFAULT_CONTROL_KINDS = ("random_projection", "shuffled_dynamics", "observed_var
 DEFAULT_PRISM_PROJECTION_MODES = ("pca", "psi_opt")
 DEFAULT_PRISM_INPUT_SPACE = "pca_latent"
 EPS = 1e-8
+
+
+@dataclass(frozen=True)
+class PCAProjectionCache:
+    mean: np.ndarray
+    components: np.ndarray
+    max_rank: int
+    train_shape: tuple[int, int]
 
 
 def split_trial_time(
@@ -62,19 +72,40 @@ def fit_pca_projection(
     if n_components < 1:
         raise ValueError("n_components must be positive")
 
+    cache = build_pca_projection_cache(train_X)
+    return pca_projection_from_cache(cache, n_components)
+
+
+def build_pca_projection_cache(train_X: np.ndarray) -> PCAProjectionCache:
+    train_X = np.asarray(train_X, dtype=float)
+    if train_X.ndim != 2:
+        raise ValueError(f"Expected 2D training data for PCA, got {train_X.shape}")
+
     pca_mean = train_X.mean(axis=0, keepdims=True)
     centred = train_X - pca_mean
     max_rank = min(centred.shape[0], centred.shape[1])
+    _, _, vt = svd(centred, full_matrices=False, check_finite=False)
+    return PCAProjectionCache(
+        mean=pca_mean,
+        components=vt,
+        max_rank=int(max_rank),
+        train_shape=tuple(train_X.shape),
+    )
 
-    if n_components > max_rank:
+
+def pca_projection_from_cache(
+    cache: PCAProjectionCache,
+    n_components: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    if n_components < 1:
+        raise ValueError("n_components must be positive")
+    if n_components > cache.max_rank:
         raise ValueError(
-            f"rep_dim={n_components} exceeds PCA rank limit {max_rank} "
-            f"for train shape {train_X.shape}"
+            f"rep_dim={n_components} exceeds PCA rank limit {cache.max_rank} "
+            f"for train shape {cache.train_shape}"
         )
 
-    _, _, vt = svd(centred, full_matrices=False, check_finite=False)
-    components = vt[:n_components]
-    return pca_mean, components
+    return cache.mean, cache.components[:n_components]
 
 
 def random_orthonormal_components(
@@ -300,7 +331,10 @@ def score_var1_model(
     if initial_prev is None:
         initial_prev = train_model_space[-1:]
 
-    prev_test = np.vstack([initial_prev, test_model_space[:-1]])
+    prev_test = np.empty_like(test_model_space)
+    prev_test[0] = np.asarray(initial_prev, dtype=float).reshape(-1)
+    if test_model_space.shape[0] > 1:
+        prev_test[1:] = test_model_space[:-1]
     pred_test = predict_var1(prev_test, coef)
     residuals = test_model_space - pred_test
     pred_observed = reconstruct_to_observed(pred_test)
@@ -393,12 +427,13 @@ def reconstruct_gaussian_from_components(
         )
 
     pred_mean = reconstruct_from_components(pred_mean_latent, projection_mean, components)
-    pred_cov = np.empty(
-        (pred_cov_latent.shape[0], components.shape[1], components.shape[1]),
-        dtype=float,
+    pred_cov = np.einsum(
+        "dp,tdc,cq->tpq",
+        components,
+        pred_cov_latent,
+        components,
+        optimize=True,
     )
-    for idx in range(pred_cov_latent.shape[0]):
-        pred_cov[idx] = components.T @ pred_cov_latent[idx] @ components
     return pred_mean, pred_cov
 
 
@@ -470,6 +505,7 @@ def evaluate_baseline_train_test(
     )
 
     train_Zsc, test_Zsc, train_mean, train_scale = standardise_from_train(train_X, test_X)
+    pca_cache: PCAProjectionCache | None = None
     rows = []
 
     for rep_dim in rep_dims:
@@ -489,7 +525,9 @@ def evaluate_baseline_train_test(
         }
 
         try:
-            pca_mean, components = fit_pca_projection(train_Zsc, n_components=rep_dim)
+            if pca_cache is None:
+                pca_cache = build_pca_projection_cache(train_Zsc)
+            pca_mean, components = pca_projection_from_cache(pca_cache, rep_dim)
             train_latent = project_with_pca(train_Zsc, pca_mean, components)
             test_latent = project_with_pca(test_Zsc, pca_mean, components)
             row.update(
@@ -664,6 +702,7 @@ def evaluate_iss_train_test(
     test_len = int(test_X.shape[0])
 
     train_Zsc, test_Zsc, train_mean, train_scale = standardise_from_train(train_X, test_X)
+    pca_cache: PCAProjectionCache | None = None
     rows = []
 
     for rep_dim in rep_dims:
@@ -683,7 +722,9 @@ def evaluate_iss_train_test(
         }
 
         try:
-            pca_mean, components = fit_pca_projection(train_Zsc, n_components=rep_dim)
+            if pca_cache is None:
+                pca_cache = build_pca_projection_cache(train_Zsc)
+            pca_mean, components = pca_projection_from_cache(pca_cache, rep_dim)
             train_latent = project_with_pca(train_Zsc, pca_mean, components)
             test_latent = project_with_pca(test_Zsc, pca_mean, components)
 
@@ -802,6 +843,7 @@ def evaluate_trial_controls(
     test_len = test_X.shape[0]
     rows = []
     rng = np.random.default_rng(random_state)
+    pca_cache: PCAProjectionCache | None = None
 
     for control_kind in control_kinds:
         control_rep_dims = (X.shape[1],) if control_kind == "observed_var1" else rep_dims
@@ -859,9 +901,11 @@ def evaluate_trial_controls(
                         )
                     )
                 elif control_kind == "shuffled_dynamics":
-                    projection_mean, components = fit_pca_projection(
-                        train_Zsc,
-                        n_components=rep_dim,
+                    if pca_cache is None:
+                        pca_cache = build_pca_projection_cache(train_Zsc)
+                    projection_mean, components = pca_projection_from_cache(
+                        pca_cache,
+                        rep_dim,
                     )
                     train_model_space = project_with_pca(
                         train_Zsc,
@@ -967,6 +1011,7 @@ def evaluate_trial_prism(
 
     rows = []
     rng = np.random.default_rng(random_state)
+    pca_cache: PCAProjectionCache | None = None
 
     for projection_mode in projection_modes:
         for rep_dim in rep_dims:
@@ -1004,10 +1049,9 @@ def evaluate_trial_prism(
                         train_scale,
                     )
                 elif input_space == "pca_latent":
-                    pca_mean, components = fit_pca_projection(
-                        train_Zsc,
-                        n_components=rep_dim,
-                    )
+                    if pca_cache is None:
+                        pca_cache = build_pca_projection_cache(train_Zsc)
+                    pca_mean, components = pca_projection_from_cache(pca_cache, rep_dim)
                     train_model_obs = project_with_pca(train_Zsc, pca_mean, components)
                     test_model_obs = project_with_pca(test_Zsc, pca_mean, components)
                     reconstruct_predictions = lambda mean, cov: unstandardise_gaussian_predictions(
@@ -1137,6 +1181,7 @@ def evaluate_prism_train_test(
 
     rows = []
     rng = np.random.default_rng(random_state)
+    pca_cache: PCAProjectionCache | None = None
 
     for projection_mode in projection_modes:
         for rep_dim in rep_dims:
@@ -1174,10 +1219,9 @@ def evaluate_prism_train_test(
                         train_scale,
                     )
                 elif input_space == "pca_latent":
-                    pca_mean, components = fit_pca_projection(
-                        train_Zsc,
-                        n_components=rep_dim,
-                    )
+                    if pca_cache is None:
+                        pca_cache = build_pca_projection_cache(train_Zsc)
+                    pca_mean, components = pca_projection_from_cache(pca_cache, rep_dim)
                     train_model_obs = project_with_pca(train_Zsc, pca_mean, components)
                     test_model_obs = project_with_pca(test_Zsc, pca_mean, components)
                     reconstruct_predictions = lambda mean, cov: unstandardise_gaussian_predictions(
