@@ -7,10 +7,13 @@ from functools import lru_cache
 import math
 from pathlib import Path
 import sys
-from typing import Callable, Iterable
+from typing import TYPE_CHECKING, Callable, Iterable, Sequence, cast
 
 import numpy as np
 from scipy.linalg import svd
+
+if TYPE_CHECKING:
+    from prism.types import Obs
 
 
 DEFAULT_REP_DIMS = (2, 4, 8, 16, 32)
@@ -26,6 +29,10 @@ class PCAProjectionCache:
     components: np.ndarray
     max_rank: int
     train_shape: tuple[int, int]
+
+
+def as_obs_sequence(values: np.ndarray) -> Sequence["Obs"]:
+    return cast("Sequence[Obs]", values)
 
 
 def split_trial_time(
@@ -312,6 +319,10 @@ def mean_sequence_gaussian_nll(
             f"got {covariances.shape}"
         )
 
+    residuals = y_true - means
+    if y_true.shape[0] > 0 and np.all(covariances == covariances[0]):
+        return mean_gaussian_nll(residuals, covariances[0])
+
     losses = [
         gaussian_nll_per_step(y_true[t], means[t], covariances[t])
         for t in range(y_true.shape[0])
@@ -369,6 +380,7 @@ def score_gaussian_observed_predictions(
     return metrics
 
 
+@lru_cache(maxsize=1)
 def _load_prism_components():
     src_root = Path(__file__).resolve().parents[3] / "src"
     if not src_root.exists():
@@ -651,6 +663,7 @@ def evaluate_trial_baseline(
     )
 
 
+@lru_cache(maxsize=1)
 def _load_iss_scoring_components():
     src_root = Path(__file__).resolve().parents[3] / "src"
     if not src_root.exists():
@@ -849,11 +862,10 @@ def evaluate_trial_controls(
         control_rep_dims = (X.shape[1],) if control_kind == "observed_var1" else rep_dims
 
         for rep_dim in control_rep_dims:
-            control_seed = (
-                np.nan
-                if control_kind == "observed_var1"
-                else int(rng.integers(0, np.iinfo(np.int32).max))
-            )
+            control_seed_int: int | None = None
+            if control_kind != "observed_var1":
+                control_seed_int = int(rng.integers(0, np.iinfo(np.int32).max))
+            control_seed = np.nan if control_seed_int is None else control_seed_int
             row = {
                 "control_kind": control_kind,
                 "control_seed": control_seed,
@@ -872,11 +884,13 @@ def evaluate_trial_controls(
 
             try:
                 if control_kind == "random_projection":
+                    if control_seed_int is None:
+                        raise ValueError("random_projection requires a random seed")
                     projection_mean = train_Zsc.mean(axis=0, keepdims=True)
                     components = random_orthonormal_components(
                         n_features=train_Zsc.shape[1],
                         n_components=rep_dim,
-                        random_state=control_seed,
+                        random_state=control_seed_int,
                     )
                     train_model_space = project_with_components(
                         train_Zsc,
@@ -901,6 +915,8 @@ def evaluate_trial_controls(
                         )
                     )
                 elif control_kind == "shuffled_dynamics":
+                    if control_seed_int is None:
+                        raise ValueError("shuffled_dynamics requires a random seed")
                     if pca_cache is None:
                         pca_cache = build_pca_projection_cache(train_Zsc)
                     projection_mean, components = pca_projection_from_cache(
@@ -919,7 +935,7 @@ def evaluate_trial_controls(
                     )
                     shuffled_train = shuffle_time_axis(
                         train_model_space,
-                        random_state=control_seed,
+                        random_state=control_seed_int,
                     )
                     row.update(
                         score_var1_model(
@@ -1081,7 +1097,7 @@ def evaluate_trial_prism(
                     allow_time_varying_fallback=allow_time_varying_fallback,
                 )
                 model = reconstructor.fit(
-                    train_model_obs,
+                    as_obs_sequence(train_model_obs),
                     ISSDim(d=rep_dim, dv=rep_dim),
                     seed=seed,
                 )
@@ -1251,7 +1267,7 @@ def evaluate_prism_train_test(
                     allow_time_varying_fallback=allow_time_varying_fallback,
                 )
                 model = reconstructor.fit(
-                    train_model_obs,
+                    as_obs_sequence(train_model_obs),
                     ISSDim(d=rep_dim, dv=rep_dim),
                     seed=seed,
                 )
@@ -1345,7 +1361,7 @@ def fit_iss_label_chains(
     )
     try:
         model = reconstructor.fit(
-            model_obs,
+            as_obs_sequence(model_obs),
             ISSDim(d=rep_dim, dv=rep_dim),
             seed=int(random_state),
         )
