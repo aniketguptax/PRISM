@@ -171,10 +171,12 @@ scripts, so prefer the `make ...-main` targets for those experiments.
 ## EEG Dataset
 
 The real-data analysis uses the OpenNeuro `ds001785` EEG dataset from Pereira
-et al. (2021), found [here](https://openneuro.org/datasets/ds001785/versions/1.1.1). It is a vibrotactile near-threshold detection task: participants
-received brief right-thumb stimuli at calibrated intensities, reported whether
-they detected the stimulus, and gave confidence ratings. The project uses the
-available 18 participants with preprocessed EEG and complete behavioural fields.
+et al. (2021), version
+[`1.1.1`](https://openneuro.org/datasets/ds001785/versions/1.1.1). It is a
+vibrotactile near-threshold detection task: participants received brief
+right-thumb stimuli at calibrated intensities, reported whether they detected
+the stimulus, and gave confidence ratings. The project uses the available 18
+participants with preprocessed EEG and complete behavioural fields.
 
 The local code expects two forms of this data:
 
