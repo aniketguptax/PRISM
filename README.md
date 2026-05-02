@@ -168,6 +168,24 @@ MPLBACKEND=Agg python -m prism.analysis.phase_diagram \
 The thesis-specific Makefile targets already call their own figure/report
 scripts, so prefer the `make ...-main` targets for those experiments.
 
+## EEG Dataset
+
+The real-data analysis uses the OpenNeuro `ds001785` EEG dataset from Pereira
+et al. (2021), found [here](https://openneuro.org/datasets/ds001785/versions/1.1.1). It is a vibrotactile near-threshold detection task: participants
+received brief right-thumb stimuli at calibrated intensities, reported whether
+they detected the stimulus, and gave confidence ratings. The project uses the
+available 18 participants with preprocessed EEG and complete behavioural fields.
+
+The local code expects two forms of this data:
+
+- EEGLAB derivatives under `data/ds001785/derivatives/eegprep`, used for channel
+  labels and region assignment;
+- MATLAB-exported trial arrays under `data/exports_mat`, loaded as
+  `trials x time x channels`.
+
+These files are too large for git and are ignored. The subject ids used by the
+current analysis are `sub-01` to `sub-07` and `sub-09` to `sub-19`.
+
 ## EEG Pipeline
 
 The EEG code lives in `data/processing`. It expects:
