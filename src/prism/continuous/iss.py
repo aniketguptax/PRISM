@@ -524,9 +524,16 @@ def one_step_predictive_y(
 
     C, R = np.asarray(model.C, dtype=float), _ensure_spd(model.R)
 
-    for t in range(T):
-        mu_y[t] = C @ mu_pr[t]
-        S_y[t] = _ensure_spd(C @ P_pr[t] @ C.T + R)
-        innov[t] = y[t].reshape(p, 1) - mu_y[t]
+    if T > 0 and np.all(P_pr == P_pr[0]):
+        S_const = _ensure_spd(C @ P_pr[0] @ C.T + R)
+        for t in range(T):
+            mu_y[t] = C @ mu_pr[t]
+            S_y[t] = S_const
+            innov[t] = y[t].reshape(p, 1) - mu_y[t]
+    else:
+        for t in range(T):
+            mu_y[t] = C @ mu_pr[t]
+            S_y[t] = _ensure_spd(C @ P_pr[t] @ C.T + R)
+            innov[t] = y[t].reshape(p, 1) - mu_y[t]
 
     return mu_y, S_y, innov

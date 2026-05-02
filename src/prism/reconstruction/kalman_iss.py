@@ -54,6 +54,39 @@ def _spd_inv_logdet(matrix: Array) -> tuple[Array, float]:
     return inv, logdet
 
 
+def _average_gaussian_nll(y: Array, means: Array, covariances: Array) -> float:
+    if y.shape[0] == 0:
+        return math.nan
+
+    if covariances.shape[0] == y.shape[0] and np.all(covariances == covariances[0]):
+        cov = _ensure_spd(covariances[0])
+        inv, logdet = _spd_inv_logdet(cov)
+        dim = int(y.shape[1])
+        const = dim * np.log(2.0 * np.pi)
+        losses: list[float] = []
+        for t in range(y.shape[0]):
+            diff = (
+                np.asarray(y[t], dtype=float).reshape(-1, 1)
+                - np.asarray(means[t], dtype=float).reshape(-1, 1)
+            )
+            quad = float((diff.T @ inv @ diff).item())
+            losses.append(0.5 * (const + logdet + quad))
+        return float(sum(losses) / len(losses))
+
+    losses = [_gaussian_nll(y[t], means[t], covariances[t]) for t in range(y.shape[0])]
+    return float(sum(losses) / len(losses))
+
+
+def _stack_rows(first: Array, second: Array) -> Array:
+    out = np.empty(
+        (first.shape[0] + second.shape[0], first.shape[1]),
+        dtype=np.result_type(first.dtype, second.dtype),
+    )
+    out[: first.shape[0]] = first
+    out[first.shape[0] :] = second
+    return out
+
+
 def _normalise_rows(matrix: Array) -> Array:
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     return matrix / np.maximum(norms, 1e-12)
@@ -546,11 +579,18 @@ def _build_macro_dynamics(
     pred_mu = np.zeros((n_pred, macro_dim), dtype=float)
     pred_cov = np.zeros((n_pred, macro_dim, macro_dim), dtype=float)
 
-    for t in range(n_pred):
-        mu_next = mu_y[t + 1]
-        cov_next = s_y[t + 1]
-        pred_mu[t] = (projection @ mu_next).reshape(-1)
-        pred_cov[t] = _ensure_spd(projection @ cov_next @ projection.T)
+    cov_nexts = s_y[1 : n_pred + 1]
+    if np.all(cov_nexts == cov_nexts[0]):
+        projected_cov = _ensure_spd(projection @ cov_nexts[0] @ projection.T)
+        for t in range(n_pred):
+            pred_mu[t] = (projection @ mu_y[t + 1]).reshape(-1)
+        pred_cov[:] = projected_cov
+    else:
+        for t in range(n_pred):
+            mu_next = mu_y[t + 1]
+            cov_next = s_y[t + 1]
+            pred_mu[t] = (projection @ mu_next).reshape(-1)
+            pred_cov[t] = _ensure_spd(projection @ cov_next @ projection.T)
 
     macro_obs = y_train @ projection.T  # shape (T, d_V)
     quantiser = _build_quantiser(macro_obs[1:], bins=macro_bins, method=macro_symboliser)
@@ -643,9 +683,16 @@ def _project_predictors(mu_y: Array, s_y: Array, projection: Array, t_start: int
     n = t_stop - t_start + 1
     out_mu = np.zeros((n, projection.shape[0]), dtype=float)
     out_cov = np.zeros((n, projection.shape[0], projection.shape[0]), dtype=float)
-    for i, t in enumerate(range(t_start, t_stop + 1)):
-        out_mu[i] = (projection @ mu_y[t + 1]).reshape(-1)
-        out_cov[i] = _ensure_spd(projection @ s_y[t + 1] @ projection.T)
+    cov_window = s_y[t_start + 1 : t_stop + 2]
+    if np.all(cov_window == cov_window[0]):
+        projected_cov = _ensure_spd(projection @ cov_window[0] @ projection.T)
+        for i, t in enumerate(range(t_start, t_stop + 1)):
+            out_mu[i] = (projection @ mu_y[t + 1]).reshape(-1)
+        out_cov[:] = projected_cov
+    else:
+        for i, t in enumerate(range(t_start, t_stop + 1)):
+            out_mu[i] = (projection @ mu_y[t + 1]).reshape(-1)
+            out_cov[i] = _ensure_spd(projection @ s_y[t + 1] @ projection.T)
     return out_mu, out_cov
 
 
@@ -665,7 +712,7 @@ def _macro_validation_nll(
 ) -> float:
     if y_val.shape[0] < 2:
         return math.nan
-    y_all = np.vstack([y_fit, y_val])
+    y_all = _stack_rows(y_fit, y_val)
     mu_y, s_y, _ = one_step_predictive_y(
         y_all,
         iss_model,
@@ -864,7 +911,7 @@ class GaussianPredictiveStateModel:
                 expected_dim=self.obs_dim,
             )
             if y_ctx.shape[0] > 0:
-                y_all = np.vstack([y_ctx, y_obs])
+                y_all = _stack_rows(y_ctx, y_obs)
                 mu_all, s_all, _ = one_step_predictive_y(
                     y_all,
                     self.iss,
@@ -905,8 +952,7 @@ class GaussianPredictiveStateModel:
         if y_obs.shape[0] == 0:
             return math.nan
         mu_obs, s_obs = self.predictive_distributions(observations, context=context)
-        losses = [_gaussian_nll(y_obs[t], mu_obs[t], s_obs[t]) for t in range(y_obs.shape[0])]
-        return float(sum(losses) / len(losses))
+        return _average_gaussian_nll(y_obs, mu_obs, s_obs)
 
     def macro_average_negative_log_likelihood(
         self,
@@ -981,7 +1027,7 @@ class GaussianPredictiveStateModel:
                 expected_dim=self.obs_dim,
             )
             if y_ctx.shape[0] > 0:
-                y_all = np.vstack([y_ctx, y_obs])
+                y_all = _stack_rows(y_ctx, y_obs)
                 mu_f, p_f, _, _, _ = iss_filter(
                     y_all,
                     self.iss,
@@ -1134,8 +1180,7 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
             allow_time_varying_fallback=self.allow_time_varying_fallback,
             steady_state_solution=steady_state_solution,
         )
-        train_losses = [_gaussian_nll(y_train[t], mu_train[t], s_train[t]) for t in range(y_train.shape[0])]
-        avg_train_nll = float(sum(train_losses) / len(train_losses))
+        avg_train_nll = _average_gaussian_nll(y_train, mu_train, s_train)
         return iss_model, steady_state_enabled, steady_state_solution, avg_train_nll
 
     def _projection_with_psi(
