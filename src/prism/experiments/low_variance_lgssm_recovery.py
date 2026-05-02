@@ -83,7 +83,16 @@ def _single_link(values: np.ndarray, eps: float) -> np.ndarray:
 
 
 def _history_windows(values: np.ndarray, times: np.ndarray, history_len: int) -> np.ndarray:
-    return np.asarray([values[t - history_len + 1 : t + 1].reshape(-1) for t in times.tolist()], dtype=float)
+    times = np.asarray(times, dtype=int)
+    starts = times - history_len + 1
+    if times.size == 0 or np.any(starts < 0):
+        return np.asarray(
+            [values[t - history_len + 1 : t + 1].reshape(-1) for t in times.tolist()],
+            dtype=float,
+        )
+
+    offsets = np.arange(history_len, dtype=int)
+    return np.asarray(values[starts[:, None] + offsets].reshape(times.shape[0], -1), dtype=float)
 
 
 def _ari_row(labels: np.ndarray, regimes: dict[str, np.ndarray], times: np.ndarray) -> dict[str, float]:
@@ -101,6 +110,18 @@ def _gaussian_nll(y: np.ndarray, mu: np.ndarray, cov: np.ndarray) -> float:
         mu = mu.reshape(mu.shape[0], mu.shape[1])
     total = 0.0
     p = y.shape[1]
+    if cov.shape[0] == y.shape[0] and np.all(cov == cov[0]):
+        covariance = cov[0]
+        sign, logdet = np.linalg.slogdet(covariance)
+        if sign <= 0:
+            return math.nan
+        inverse = np.linalg.inv(covariance)
+        for idx in range(y.shape[0]):
+            diff = (y[idx] - mu[idx]).reshape(p, 1)
+            quadratic = float((diff.T @ inverse @ diff).item())
+            total += 0.5 * (p * math.log(2.0 * math.pi) + logdet + quadratic)
+        return float(total / max(y.shape[0], 1))
+
     for idx in range(y.shape[0]):
         diff = (y[idx] - mu[idx]).reshape(p, 1)
         sign, logdet = np.linalg.slogdet(cov[idx])

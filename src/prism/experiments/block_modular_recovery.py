@@ -114,6 +114,18 @@ def _gaussian_held_out_nll(
         mu_pred = mu_pred.reshape(mu_pred.shape[0], mu_pred.shape[1])
 
     total = 0.0
+    if cov_pred.shape[0] == y_test.shape[0] and np.all(cov_pred == cov_pred[0]):
+        covariance = cov_pred[0]
+        sign, logdet = np.linalg.slogdet(covariance)
+        if sign <= 0:
+            return math.nan
+        inverse = np.linalg.inv(covariance)
+        for idx in range(y_test.shape[0]):
+            diff = (y_test[idx] - mu_pred[idx]).reshape(obs_dim, 1)
+            quadratic = float((diff.T @ inverse @ diff).item())
+            total += 0.5 * (obs_dim * math.log(2.0 * math.pi) + logdet + quadratic)
+        return float(total / y_test.shape[0])
+
     for idx in range(y_test.shape[0]):
         diff = (y_test[idx] - mu_pred[idx]).reshape(obs_dim, 1)
         covariance = cov_pred[idx]
