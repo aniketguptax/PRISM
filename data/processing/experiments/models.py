@@ -751,7 +751,9 @@ def evaluate_iss_train_test(
 
             # Predict over the full sequence so the Kalman filter warms up on
             # training data before producing test-segment predictions.
-            full_latent = np.vstack([train_latent, test_latent])
+            full_latent = np.empty((train_len + test_len, rep_dim), dtype=train_latent.dtype)
+            full_latent[:train_len] = train_latent
+            full_latent[train_len:] = test_latent
             mu_y, S_y, _ = one_step_predictive_y(
                 full_latent,
                 model,

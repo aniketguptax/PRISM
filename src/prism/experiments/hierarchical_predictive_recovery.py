@@ -83,12 +83,8 @@ def _predictive_signatures(
 def _normalise_rows(counts: np.ndarray) -> np.ndarray:
     totals = counts.sum(axis=1, keepdims=True)
     fallback = np.full(counts.shape[1], 1.0 / counts.shape[1])
-    probs = np.zeros_like(counts, dtype=float)
-    for idx in range(counts.shape[0]):
-        if totals[idx, 0] > 0.0:
-            probs[idx] = counts[idx] / totals[idx, 0]
-        else:
-            probs[idx] = fallback
+    probs = np.broadcast_to(fallback, counts.shape).copy()
+    np.divide(counts, totals, out=probs, where=totals > 0.0)
     return probs
 
 
@@ -178,10 +174,30 @@ def _cluster_next_symbol_probs(
 ) -> np.ndarray:
     n_states = int(labels.max()) + 1 if labels.size else 1
     counts = np.full((n_states, alphabet_size), 1e-3, dtype=float)
-    for label, t in zip(labels.tolist(), times.tolist()):
-        if t + 1 < x.shape[0]:
-            counts[int(label), int(x[t + 1])] += 1.0
+    next_times = times + 1
+    valid = next_times < x.shape[0]
+    if np.any(valid):
+        np.add.at(
+            counts,
+            (labels[valid].astype(int), x[next_times[valid]].astype(int)),
+            1.0,
+        )
     return counts / counts.sum(axis=1, keepdims=True)
+
+
+def _ensure_probability_rows(
+    probs: np.ndarray,
+    *,
+    min_rows: int,
+    alphabet_size: int,
+) -> np.ndarray:
+    if probs.shape[0] >= min_rows:
+        return probs
+
+    padded = np.empty((min_rows, alphabet_size), dtype=float)
+    padded[: probs.shape[0]] = probs
+    padded[probs.shape[0] :] = 1.0 / alphabet_size
+    return padded
 
 
 def _logloss(
@@ -386,7 +402,11 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
                     alphabet_size=alphabet_size,
                 )
                 if fallback_label >= probs.shape[0]:
-                    probs = np.vstack([probs, np.full(alphabet_size, 1.0 / alphabet_size)])
+                    probs = _ensure_probability_rows(
+                        probs,
+                        min_rows=fallback_label + 1,
+                        alphabet_size=alphabet_size,
+                    )
                 unif, branch = _transition_diagnostics(labels_train, x[train_times])
                 n_states = int(max(labels_train.max(), labels_test.max()) + 1)
                 row = {

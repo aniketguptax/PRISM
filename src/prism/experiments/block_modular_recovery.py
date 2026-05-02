@@ -222,7 +222,7 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
                 )
                 steady_solution = solve_steady_state_kalman(iss_model, strict=False)
                 mu_pred_test, cov_pred_test, _ = one_step_predictive_y(
-                    np.vstack([y_train, y_test]),
+                    obs,
                     iss_model,
                     steady_state=True,
                     steady_state_solution=steady_solution,

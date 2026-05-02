@@ -153,10 +153,20 @@ def compute_ss_psi(
         )
 
     macro_dim = L.shape[0]
-    C_full = np.vstack((C, L @ C))
-    Q_full = K @ V @ K.T
-    R_full = np.block([[V, V @ L.T], [L @ V, L @ V @ L.T]])
-    S_full = np.hstack((K @ V, K @ V @ L.T))
+    LC = L @ C
+    LV = L @ V
+    V_LT = V @ L.T
+    KV = K @ V
+
+    C_full = np.empty(
+        (micro_dim + macro_dim, C.shape[1]),
+        dtype=np.result_type(C.dtype, LC.dtype),
+    )
+    C_full[:micro_dim] = C
+    C_full[micro_dim:] = LC
+    Q_full = KV @ K.T
+    R_full = np.block([[V, V_LT], [LV, LV @ L.T]])
+    S_full = np.hstack((KV, KV @ L.T))
 
     macro_idx = list(range(micro_dim, micro_dim + macro_dim))
     partitions = [[i] for i in range(micro_dim)] + [macro_idx]
