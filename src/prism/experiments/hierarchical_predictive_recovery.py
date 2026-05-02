@@ -241,10 +241,16 @@ def _labels_for_kmeans(
     alphabet_size: int,
     centres: np.ndarray,
 ) -> np.ndarray:
-    values = np.asarray(
-        [_context_vector(_context_key(x, int(t), context_len), alphabet_size) for t in times.tolist()],
-        dtype=float,
-    )
+    times = np.asarray(times, dtype=int)
+    offsets = np.arange(context_len - 1, -1, -1, dtype=int)
+    symbols = x[times[:, None] - offsets[None, :]].astype(int)
+    values = np.zeros((times.shape[0], context_len, alphabet_size), dtype=float)
+    values[
+        np.arange(times.shape[0])[:, None],
+        np.arange(context_len, dtype=int)[None, :],
+        symbols,
+    ] = 1.0
+    values = values.reshape(times.shape[0], -1)
     distances = np.linalg.norm(values[:, None, :] - centres[None, :, :], axis=-1)
     return np.argmin(distances, axis=1).astype(int)
 

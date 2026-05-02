@@ -88,13 +88,18 @@ def _kmeans(
 
 
 def _history_windows(values: np.ndarray, times: np.ndarray, history_len: int) -> np.ndarray:
-    out = []
-    for t in times.tolist():
-        start = int(t) - history_len + 1
-        if start < 0:
-            continue
-        out.append(values[start : int(t) + 1].reshape(-1))
-    return np.asarray(out, dtype=float)
+    times = np.asarray(times, dtype=int)
+    starts = times - history_len + 1
+    valid = starts >= 0
+    if not np.any(valid):
+        return np.asarray([], dtype=float)
+
+    valid_starts = starts[valid]
+    offsets = np.arange(history_len, dtype=int)
+    return np.asarray(
+        values[valid_starts[:, None] + offsets].reshape(valid_starts.shape[0], -1),
+        dtype=float,
+    )
 
 
 def _gaussian_held_out_nll(
@@ -108,6 +113,18 @@ def _gaussian_held_out_nll(
     if mu_pred.ndim == 3:
         mu_pred = mu_pred.reshape(mu_pred.shape[0], mu_pred.shape[1])
     total = 0.0
+    if cov_pred.shape[0] == y_test.shape[0] and np.all(cov_pred == cov_pred[0]):
+        covariance = cov_pred[0]
+        sign, logdet = np.linalg.slogdet(covariance)
+        if sign <= 0:
+            return math.nan
+        inverse = np.linalg.inv(covariance)
+        for idx in range(y_test.shape[0]):
+            diff = (y_test[idx] - mu_pred[idx]).reshape(obs_dim, 1)
+            quadratic = float((diff.T @ inverse @ diff).item())
+            total += 0.5 * (obs_dim * math.log(2.0 * math.pi) + logdet + quadratic)
+        return float(total / y_test.shape[0])
+
     for idx in range(y_test.shape[0]):
         diff = (y_test[idx] - mu_pred[idx]).reshape(obs_dim, 1)
         covariance = cov_pred[idx]
