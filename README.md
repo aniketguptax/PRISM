@@ -1,71 +1,105 @@
 # PRISM
 
-Predictive Representations for Inference of Scale and Macrostates.
+PRISM is the codebase for my final-year project on predictive-state
+representations and macrostates. It contains:
 
-PRISM supports two pipelines:
+- a discrete symbolic pipeline for binary processes;
+- a continuous Kalman ISS pipeline for multivariate time series;
+- synthetic recovery benchmarks used in the thesis;
+- EEG processing scripts for the real-data validation.
 
-- Discrete binary processes with `LastK` representations and one-step merge reconstruction.
-- Continuous multivariate time series with Kalman ISS reconstruction plus macrostate
-  construction over `(d, d_V)`.
+The repository is set up as a research codebase rather than a packaged library.
+Most commands are run from the repository root or from `src`.
 
-## One-command auto mode
+## Layout
 
-If you want PRISM to pick the configuration automatically from a data file:
-
-```bash
-./prism /absolute/path/to/data.csv
-# or:
-cd src
-python -m prism /absolute/path/to/data.csv
+```text
+src/prism/              Core PRISM package
+src/prism/processes/    Synthetic data generators
+src/prism/experiments/  Thesis synthetic sweeps
+src/prism/analysis/     Figure and summary scripts
+data/processing/        EEG experiment and reporting pipeline
+report/                 Local thesis source, ignored by git
+logs/                   Local/HPC logs, ignored by git
 ```
 
-This runs an auto sweep (with model selection), writes results to `results/auto_*`,
-then re-runs the selected best pipeline in `best_pipeline/`.
-It also writes `tractability_by_builder.csv` with `N`, memory estimate, and wall-time
-for each clustering/coarse-graining builder evaluated in the tractability pass.
-
-### Data file format
-
-For `data.csv`, use a dense numeric matrix with shape `T x p`:
-
-- rows: time points
-- columns: observed variables/channels
-- no header row
-- no index column
-- all rows same width
-- finite numeric values only (no text, `NaN`, or `inf`)
-
-Both univariate (`p=1`) and multivariate (`p>1`) are supported.
-
-If your file has extra columns, select only the signal columns with:
-- `--data-column i` for a single column
-- `--data-columns i j k ...` for multiple columns
+Generated data and results are intentionally not tracked. In particular,
+`data/ds001785`, `data/exports_mat`, `data/results_baseline`,
+`data/results_prism`, `src/results`, `logs`, and `report` are local working
+directories.
 
 ## Setup
 
+The Makefile expects a Python interpreter at `./venv/bin/python` unless
+`PYTHON=...` is supplied.
+
 ```bash
-conda create -n prism39 python=3.9 -y
-conda activate prism39
+python3 -m venv venv
+source venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Graphviz is required for transition graph rendering:
+Graph rendering also needs the system Graphviz binary:
 
 ```bash
-brew install graphviz  # macOS
+brew install graphviz      # macOS
+# or: sudo apt install graphviz
 ```
 
-## Discrete run
+On the Imperial HPC, load Python first and point `make` at the environment you
+created there:
 
-Discrete semantics:
-- Reconstruction is fit on the training prefix only.
-- Held-out log-loss is evaluated on the test suffix, but each test-time representation
-  `z_t = phi_k(x_{1:t})` is computed from the full observed past across the
-  train/test boundary (`x_train + x_test`).
-- No model parameters are refit on held-out data; unseen test-time contexts back off
-  to `p(x_{t+1}=1)=0.5`.
-- CLI progress is printed at `INFO` level by default; use `--log-level WARNING`
-  (or `ERROR`) for quieter runs.
+```bash
+module load Python/3.11.3-GCCcore-12.3.0
+PYTHON="$HOME/venvs/prism/bin/python" make test
+```
+
+## Basic Checks
+
+```bash
+make test
+make smoke-discrete
+make smoke-continuous
+make smoke-continuous-psi
+```
+
+The smoke targets write under `src/results/smoke/`.
+
+## Main Thesis Runs
+
+These are the two synthetic runs currently used as the main validation targets.
+
+```bash
+make hierarchical-predictive-main
+make low-variance-lgssm-main
+```
+
+They write:
+
+```text
+src/results/hierarchical_predictive_main/
+src/results/low_variance_lgssm_main/
+```
+
+Each target runs the sweep and then generates the figure/report artefacts used
+in the thesis.
+
+There is also a block-modular LGSSM diagnostic:
+
+```bash
+make block-modular-smoke
+make block-modular-sweep
+```
+
+This is kept as a pipeline stress test and historical comparison. It is not the
+main continuous validation result.
+
+## Generic PRISM CLI
+
+The CLI is useful for quick synthetic sweeps and file-backed continuous data.
+
+Discrete example:
 
 ```bash
 cd src
@@ -79,24 +113,7 @@ python -m prism.cli \
   --force
 ```
 
-Optional transition export:
-
-```bash
-python -m prism.cli \
-  --process even_process \
-  --reconstructor one_step \
-  --ks 2 \
-  --seeds 0 \
-  --length 200000 \
-  --save-transitions \
-  --show-transitions-for last_2 \
-  --outdir ./results/even_transitions \
-  --force
-```
-
-## Continuous run (Kalman ISS)
-
-Synthetic continuous process:
+Continuous Kalman ISS example:
 
 ```bash
 cd src
@@ -113,7 +130,7 @@ python -m prism.cli \
   --force
 ```
 
-File-backed continuous process:
+File-backed continuous example:
 
 ```bash
 cd src
@@ -130,102 +147,93 @@ python -m prism.cli \
   --force
 ```
 
-### Continuous model selection and macrostate builders
+Input CSVs should be dense numeric matrices with rows as time points and columns
+as observed variables. Do not include a header row or index column unless you
+select signal columns explicitly with `--data-column` or `--data-columns`.
 
-Available macro builders:
-- `hierarchical_single` (single-link threshold cut)
-- `hierarchical_complete` (complete-link threshold cut)
-- `linear_quantile` (linear coarse-graining baseline)
-- `greedy` (anchor-binning baseline)
+## Analysis Scripts
 
-Global aliases are still accepted for compatibility:
-`global_single -> hierarchical_single`, `global/global_complete -> hierarchical_complete`.
-
-For blocked-CV model selection across projection mode / macro builder / epsilon grid:
+For generic CLI runs:
 
 ```bash
 cd src
-python -m prism.cli \
-  --process linear_gaussian_ssm \
-  --reconstructor kalman_iss \
-  --ks 2 \
-  --dvs 2 \
-  --model-select \
-  --selection-score stability \
-  --selection-projections pca random psi_opt \
-  --selection-builders hierarchical_single hierarchical_complete linear_quantile greedy \
-  --selection-macro-eps 0.2 0.25 0.3 \
-  --selection-repeats 4 \
-  --selection-perturb seed_blocked \
-  --selection-block-frac 0.85 \
-  --length 5000 \
-  --seeds 0 1 \
-  --outdir ./results/continuous_iss_selected \
-  --force
+python -m prism.analysis.summarise --root ./results/even_k_sweep
+MPLBACKEND=Agg python -m prism.analysis.plot_k \
+  --root ./results/even_k_sweep \
+  --metrics logloss n_states unifilarity_score branch_entropy
+MPLBACKEND=Agg python -m prism.analysis.phase_diagram \
+  --root ./results/even_k_sweep
 ```
 
-Model-selection metadata is written to `runs.csv`:
-`macro_builder`, `model_selection`, `selection_score`,
-`selection_value`, `selection_predictive`, `selection_stability`,
-variance summaries (`selection_n_states_var`, `selection_unifilarity_var`,
-`selection_branch_entropy_var`), and tractability fields
-(`macro_build_time_s`, `macro_distance_matrix_mb_est`, `macro_n_pred`).
-Outer held-out reporting includes both ISS Gaussian loss (`gaussian_logloss`)
-and builder-dependent macro predictive loss (`macro_logloss`).
+The thesis-specific Makefile targets already call their own figure/report
+scripts, so prefer the `make ...-main` targets for those experiments.
 
-### ISS Psi optimisation
+## EEG Pipeline
 
-You can optimise ISS Psi over a macro projection matrix `L` during fitting:
+The EEG code lives in `data/processing`. It expects:
+
+- exported subject files under `data/exports_mat`;
+- preprocessed EEGLAB files under `data/ds001785/derivatives/eegprep`;
+- baseline results under `data/results_baseline` for the final evidence
+  comparison.
+
+The current full central-window PRISM run is captured in:
 
 ```bash
+qsub run_eeg_prism_central_full.pbs
+```
+
+The script runs:
+
+1. `data/processing/run.py prism-region-window`
+2. `data/processing/summarise.py evidence`
+3. `data/processing/summarise.py mechanistic-dissociation`
+
+For local debugging, use the same command with `--max-trials` and a single
+subject:
+
+```bash
+PYTHONPATH="$PWD/data/processing:$PWD/src" \
+python data/processing/run.py prism-region-window \
+  --subject sub-01 \
+  --export-dir data/exports_mat \
+  --derivatives-dir data/ds001785/derivatives/eegprep \
+  --outdir data/results_prism/debug_prism_region_window \
+  --regions central \
+  --rep-dims 4 \
+  --projection-modes pca \
+  --macro-builder hierarchical_complete \
+  --macro-eps 0.25 \
+  --macro-bins 3 \
+  --em-iters 20 \
+  --em-tol 1e-3 \
+  --train-start-ms -300 \
+  --train-end-ms 0 \
+  --test-start-ms 125 \
+  --test-end-ms 375 \
+  --max-trials 20
+```
+
+## Auto Mode
+
+For a quick file-based run where PRISM chooses a configuration:
+
+```bash
+./prism /absolute/path/to/data.csv
+# or
 cd src
-python -m prism.cli \
-  --process linear_gaussian_ssm \
-  --reconstructor kalman_iss \
-  --macro-projection psi_opt \
-  --compute-psi \
-  --psi-optimiser random \
-  --psi-restarts 12 \
-  --psi-iters 120 \
-  --ks 1 2 3 \
-  --dvs 1 2 \
-  --seeds 0 1 \
-  --length 5000 \
-  --outdir ./results/continuous_iss_psi \
-  --force
+python -m prism /absolute/path/to/data.csv
 ```
 
-This writes `psi_opt`, `psi_macro_dim`, and `psi_optimiser` into `runs.csv`.
+This writes an auto sweep under `results/auto_*` and then re-runs the selected
+pipeline in `best_pipeline/`.
 
-`--psi-optimiser torch_adam` is also supported for gradient-based optimisation, but requires a local torch install.
+## Notes
 
-## Summaries and figures
-
-```bash
-cd src
-python -m prism.analysis.summarise --root ../results/even_k_sweep
-python -m prism.analysis.plot_k --root ../results/even_k_sweep --metrics logloss n_states unifilarity_score branch_entropy
-python -m prism.analysis.phase_diagram --root ../results/even_k_sweep
-
-# Continuous-only analysis (ISS sweeps)
-python -m prism.analysis.summarise --root ../results/continuous_iss_sweep
-python -m prism.analysis.plot_k --root ../results/continuous_iss_sweep --dv 1 --metrics gaussian_logloss n_states C_mu_empirical psi_opt
-python -m prism.analysis.continuous_heatmaps --root ../results/continuous_iss_sweep --shared-scale
-python -m prism.analysis.compare_projection_modes --root ../results/continuous_iss_sweep --metrics gaussian_logloss n_states C_mu_empirical psi_opt
-```
-
-## Smoke commands
-
-From repository root:
-
-```bash
-make smoke-discrete
-make smoke-continuous
-make smoke-continuous-psi
-```
-
-## Tests
-
-```bash
-make test
-```
+- Use `MPLBACKEND=Agg` on headless machines.
+- On shared machines, set `OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`, and
+  `MKL_NUM_THREADS=1` for batch jobs.
+- `psi_opt` supports a random optimiser by default. `torch_adam` is available
+  if PyTorch is installed.
+- Keep generated result folders out of git. The report should cite generated
+  CSVs/figures, but the large data products stay local or on HPC storage.
