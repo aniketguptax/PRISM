@@ -1,0 +1,86 @@
+#!/bin/bash
+#PBS -N eegpreg
+#PBS -J 1-54
+#PBS -l select=1:ncpus=1:mem=8gb
+#PBS -l walltime=12:00:00
+#PBS -j oe
+
+set -euo pipefail
+
+REPO="${PRISM_REPO:-$HOME/PRISM/PRISM}"
+PYTHON_BIN="${PRISM_PYTHON:-$HOME/venvs/prism/bin/python}"
+ROOT_OUTDIR="${PRISM_EEG_REGION_TIMECOURSE_OUTDIR:-data/results_prism/eeg_prism_region_timecourse_pca_q4}"
+
+SUBJECTS=(
+  sub-01 sub-02 sub-03 sub-04 sub-05 sub-06 sub-07 sub-09 sub-10
+  sub-11 sub-12 sub-13 sub-14 sub-15 sub-16 sub-17 sub-18 sub-19
+)
+WINDOW_STARTS=(0 125 250)
+WINDOW_ENDS=(250 375 500)
+REGIONS=(central frontal parietal occipital temporal)
+
+TASK_ID="${PBS_ARRAY_INDEX:-1}"
+ZERO_BASED=$((TASK_ID - 1))
+SUBJECT_COUNT=${#SUBJECTS[@]}
+WINDOW_COUNT=${#WINDOW_STARTS[@]}
+EXPECTED_TASKS=$((SUBJECT_COUNT * WINDOW_COUNT))
+
+if (( ZERO_BASED < 0 || ZERO_BASED >= EXPECTED_TASKS )); then
+  echo "PBS_ARRAY_INDEX=$TASK_ID is outside 1-$EXPECTED_TASKS" >&2
+  exit 2
+fi
+
+WINDOW_IDX=$((ZERO_BASED / SUBJECT_COUNT))
+SUBJECT_IDX=$((ZERO_BASED % SUBJECT_COUNT))
+SUBJECT="${SUBJECTS[$SUBJECT_IDX]}"
+TEST_START="${WINDOW_STARTS[$WINDOW_IDX]}"
+TEST_END="${WINDOW_ENDS[$WINDOW_IDX]}"
+WINDOW_TAG="${TEST_START}_${TEST_END}"
+OUTDIR="${ROOT_OUTDIR}/window_${WINDOW_TAG}"
+
+cd "$REPO"
+mkdir -p logs "$OUTDIR"
+exec > "logs/eeg_prism_region_timecourse_${WINDOW_TAG}_${SUBJECT}_${PBS_JOBID:-manual}.log" 2>&1
+
+echo "started $(date)"
+echo "subject=$SUBJECT"
+echo "window=${TEST_START}-${TEST_END} ms"
+echo "regions=${REGIONS[*]}"
+echo "repo=$REPO"
+echo "python=$PYTHON_BIN"
+echo "outdir=$OUTDIR"
+echo "job=${PBS_JOBID:-manual}"
+
+module load Python/3.11.3-GCCcore-12.3.0
+source "$HOME/venvs/prism/bin/activate"
+
+export PYTHONPATH="$REPO/data/processing:$REPO/src:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+export MPLBACKEND=Agg
+export MPLCONFIGDIR="${TMPDIR:-/tmp}/prism-mpl"
+export XDG_CACHE_HOME="${TMPDIR:-/tmp}/prism-cache"
+
+"$PYTHON_BIN" data/processing/run.py prism-region-window \
+  --subject "$SUBJECT" \
+  --export-dir data/exports_mat \
+  --derivatives-dir data/ds001785/derivatives/eegprep \
+  --outdir "$OUTDIR" \
+  --regions "${REGIONS[@]}" \
+  --rep-dims 4 \
+  --projection-modes pca \
+  --macro-builder hierarchical_complete \
+  --macro-eps 0.25 \
+  --macro-bins 3 \
+  --em-iters 20 \
+  --em-tol 1e-3 \
+  --train-start-ms -300 \
+  --train-end-ms 0 \
+  --test-start-ms "$TEST_START" \
+  --test-end-ms "$TEST_END"
+
+echo "expected=${OUTDIR}/${SUBJECT}_region_window_prism.csv"
+ls -lh "${OUTDIR}/${SUBJECT}_region_window_prism.csv"
+echo "finished $(date)"

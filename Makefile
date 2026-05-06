@@ -7,7 +7,7 @@ endif
 
 PLOT_ENV = MPLBACKEND=Agg MPLCONFIGDIR=/tmp/prism-mpl XDG_CACHE_HOME=/tmp
 
-.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main multiscale-lgssm-smoke multiscale-lgssm-main multiscale-lgssm-robust
+.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main multiscale-lgssm-smoke multiscale-lgssm-main multiscale-lgssm-robust eeg-var-timecourse-figure eeg-subject-decoder eeg-prism-timecourse-decoder eeg-prism-region-timecourse-summary eeg-report-figures
 
 test:
 	@if ! $(PYTHON) -c "import pytest" >/dev/null 2>&1; then \
@@ -249,3 +249,20 @@ multiscale-lgssm-robust:
 		--em-iters 40 \
 		--history-lens 5 20 50 100 \
 		--outdir ./results/multiscale_lgssm_robust
+
+eeg-var-timecourse-figure:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_var_timecourse_figure.py
+
+eeg-subject-decoder:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_subject_decoder.py
+
+eeg-prism-timecourse-decoder:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_timecourse_decoder.py
+
+eeg-prism-region-timecourse-summary:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_region_timecourse_summary.py
+
+eeg-report-figures: eeg-var-timecourse-figure eeg-prism-region-timecourse-summary
+	mkdir -p report/figures/ch5
+	cp data/results_baseline/region_sliding_baseline300ms_controls_focus_q4/summary_temporal_evidence_central/paper_figure/eeg_var_timecourse.pdf report/figures/ch5/eeg_var_timecourse.pdf
+	cp data/results_prism/eeg_prism_region_timecourse_pca_q4/summary_subject_decoder_region_timecourse/eeg_prism_region_timecourse_summary.pdf report/figures/ch5/eeg_prism_region_timecourse_summary.pdf
