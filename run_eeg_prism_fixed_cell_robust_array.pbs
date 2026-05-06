@@ -1,0 +1,98 @@
+#!/bin/bash
+#PBS -N eegfixrb
+#PBS -J 1-720
+#PBS -l select=1:ncpus=1:mem=8gb
+#PBS -l walltime=08:00:00
+#PBS -j oe
+
+set -euo pipefail
+
+REPO="${PRISM_REPO:-$HOME/PRISM/PRISM}"
+PYTHON_BIN="${PRISM_PYTHON:-$HOME/venvs/prism/bin/python}"
+ROOT_OUTDIR="${PRISM_EEG_FIXED_CELL_ROBUST_OUTDIR:-data/results_prism/eeg_prism_fixed_cell_robust}"
+
+SUBJECTS=(
+  sub-01 sub-02 sub-03 sub-04 sub-05 sub-06 sub-07 sub-09 sub-10
+  sub-11 sub-12 sub-13 sub-14 sub-15 sub-16 sub-17 sub-18 sub-19
+)
+REP_DIMS=(2 3 4 5)
+MACRO_EPS=(0.15 0.20 0.25 0.30 0.35)
+BUILDERS=(hierarchical_complete linear_quantile)
+
+TASK_ID="${PBS_ARRAY_INDEX:-1}"
+ZERO_BASED=$((TASK_ID - 1))
+SUBJECT_COUNT=${#SUBJECTS[@]}
+SETTING_COUNT=$((${#REP_DIMS[@]} * ${#MACRO_EPS[@]} * ${#BUILDERS[@]}))
+EXPECTED_TASKS=$((SUBJECT_COUNT * SETTING_COUNT))
+
+if (( ZERO_BASED < 0 || ZERO_BASED >= EXPECTED_TASKS )); then
+  echo "PBS_ARRAY_INDEX=$TASK_ID is outside 1-$EXPECTED_TASKS" >&2
+  exit 2
+fi
+
+SETTING_IDX=$((ZERO_BASED / SUBJECT_COUNT))
+SUBJECT_IDX=$((ZERO_BASED % SUBJECT_COUNT))
+
+BUILDER_IDX=$((SETTING_IDX % ${#BUILDERS[@]}))
+TMP=$((SETTING_IDX / ${#BUILDERS[@]}))
+EPS_IDX=$((TMP % ${#MACRO_EPS[@]}))
+REP_IDX=$((TMP / ${#MACRO_EPS[@]}))
+
+SUBJECT="${SUBJECTS[$SUBJECT_IDX]}"
+REP_DIM="${REP_DIMS[$REP_IDX]}"
+EPS="${MACRO_EPS[$EPS_IDX]}"
+BUILDER="${BUILDERS[$BUILDER_IDX]}"
+EPS_TAG="${EPS/./}"
+SETTING_TAG="pca_d${REP_DIM}_${BUILDER}_eps${EPS_TAG}"
+OUTDIR="${ROOT_OUTDIR}/${SETTING_TAG}"
+
+cd "$REPO"
+mkdir -p logs "$OUTDIR"
+exec > "logs/eeg_prism_fixed_cell_robust_${SETTING_TAG}_${SUBJECT}_${PBS_JOBID:-manual}.log" 2>&1
+
+echo "started $(date)"
+echo "subject=$SUBJECT"
+echo "setting=$SETTING_TAG"
+echo "rep_dim=$REP_DIM"
+echo "macro_eps=$EPS"
+echo "macro_builder=$BUILDER"
+echo "repo=$REPO"
+echo "python=$PYTHON_BIN"
+echo "outdir=$OUTDIR"
+echo "job=${PBS_JOBID:-manual}"
+
+module load Python/3.11.3-GCCcore-12.3.0
+source "$HOME/venvs/prism/bin/activate"
+
+export PYTHONPATH="$REPO/data/processing:$REPO/src:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+export MPLBACKEND=Agg
+export MPLCONFIGDIR="${TMPDIR:-/tmp}/prism-mpl"
+export XDG_CACHE_HOME="${TMPDIR:-/tmp}/prism-cache"
+
+"$PYTHON_BIN" data/processing/run.py prism-region-window \
+  --subject "$SUBJECT" \
+  --export-dir data/exports_mat \
+  --derivatives-dir data/ds001785/derivatives/eegprep \
+  --outdir "$OUTDIR" \
+  --regions occipital \
+  --rep-dims "$REP_DIM" \
+  --projection-modes pca \
+  --macro-builder "$BUILDER" \
+  --macro-eps "$EPS" \
+  --macro-bins 3 \
+  --em-iters 20 \
+  --em-tol 1e-3 \
+  --train-start-ms -300 \
+  --train-end-ms 0 \
+  --test-start-ms 125 \
+  --test-end-ms 375
+
+echo "expected=${OUTDIR}/${SUBJECT}_region_window_prism.csv"
+ls -lh "${OUTDIR}/${SUBJECT}_region_window_prism.csv"
+echo "finished $(date)"
+echo "After the array finishes, sync ${ROOT_OUTDIR} back and run:"
+echo "make eeg-prism-fixed-cell-robust-summary"

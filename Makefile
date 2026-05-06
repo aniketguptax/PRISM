@@ -7,7 +7,7 @@ endif
 
 PLOT_ENV = MPLBACKEND=Agg MPLCONFIGDIR=/tmp/prism-mpl XDG_CACHE_HOME=/tmp
 
-.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main multiscale-lgssm-smoke multiscale-lgssm-main multiscale-lgssm-robust eeg-var-timecourse-figure eeg-subject-decoder eeg-prism-timecourse-decoder eeg-prism-region-timecourse-summary eeg-report-figures
+.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main multiscale-lgssm-smoke multiscale-lgssm-main multiscale-lgssm-robust eeg-var-timecourse-figure eeg-subject-decoder eeg-prism-timecourse-decoder eeg-prism-region-timecourse-summary eeg-prism-fixed-cell-stats eeg-prism-fixed-cell-robust-summary eeg-report-figures
 
 test:
 	@if ! $(PYTHON) -c "import pytest" >/dev/null 2>&1; then \
@@ -261,6 +261,12 @@ eeg-prism-timecourse-decoder:
 
 eeg-prism-region-timecourse-summary:
 	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_region_timecourse_summary.py
+
+eeg-prism-fixed-cell-stats:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_fixed_cell_stats.py
+
+eeg-prism-fixed-cell-robust-summary:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_fixed_cell_robust_summary.py
 
 eeg-report-figures: eeg-var-timecourse-figure eeg-prism-region-timecourse-summary
 	mkdir -p report/figures/ch5
