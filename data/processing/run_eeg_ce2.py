@@ -69,10 +69,6 @@ def _process_subject(
     for trial_idx in trial_indices:
         trial = data[trial_idx]  # (T, channels)
 
-        hit = int(-1)
-        confidence = float("nan")
-        stim_amp = float("nan")
-
         for window_name, tr_start, tr_end, _te_start, _te_end in WINDOWS:
             mask_train = (times_ms >= tr_start) & (times_ms <= tr_end)
             train_window = trial[mask_train]  # (T_train, channels)
@@ -98,9 +94,6 @@ def _process_subject(
                     "trial_idx":   np.array(trial_idx, dtype=int),
                     "region_name": np.array(group.name),
                     "window_name": np.array(window_name),
-                    "hit":         np.array(hit, dtype=int),
-                    "confidence":  np.array(confidence),
-                    "stim_amp":    np.array(stim_amp),
                 }
                 for eps, labels in chains.items():
                     key = f"labels_eps{eps:.4f}".rstrip("0").rstrip(".")
@@ -167,7 +160,7 @@ def main() -> None:
         max_trials=args.max_trials,
     )
 
-    print(f"Processing {len(paths)} subject(s) → {args.outdir}")
+    print(f"Processing {len(paths)} subject(s) into {args.outdir}")
 
     if args.n_jobs > 1 and len(paths) > 1:
         with ProcessPoolExecutor(max_workers=args.n_jobs) as pool:

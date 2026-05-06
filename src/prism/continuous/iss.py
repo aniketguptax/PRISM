@@ -28,7 +28,7 @@ def _ensure_spd(S: Array, *, ridge: float = 1e-9, max_tries: int = 8) -> Array:
 
 
 def _chol_inv(S: Array) -> Tuple[Array, float]:
-    """Return ``(S^{-1}, logdet(S))`` robustly via Cholesky."""
+    """Return ``(S^{-1}, logdet(S))`` via Cholesky."""
     S_spd = _ensure_spd(S)
     L = np.linalg.cholesky(S_spd)
     logdet = 2.0 * np.sum(np.log(np.diag(L)))

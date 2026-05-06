@@ -212,7 +212,7 @@ def main() -> None:
 
     # quick status row
     for name in ["config.json", "runs.csv", "summary_by_condition.csv", "summary_simple.csv"]:
-        st.write(f"- {name}: {'✅' if (run_dir/name).exists() else '—'}")
+        st.write(f"- {name}: {'yes' if (run_dir/name).exists() else 'no'}")
 
     # preview summary_simple
     ss = run_dir / "summary_simple.csv"

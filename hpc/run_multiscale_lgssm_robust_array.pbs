@@ -1,0 +1,59 @@
+#!/bin/bash
+#PBS -N mslgssm
+#PBS -J 1-250
+#PBS -l select=1:ncpus=1:mem=6gb
+#PBS -l walltime=08:00:00
+#PBS -j oe
+
+set -euo pipefail
+
+REPO="${PRISM_REPO:-$HOME/PRISM/PRISM}"
+PYTHON_BIN="${PRISM_PYTHON:-$HOME/venvs/prism/bin/python}"
+TASK_ID="${PBS_ARRAY_INDEX:-1}"
+ZERO_BASED=$((TASK_ID - 1))
+SETTING_COUNT="${PRISM_MULTISCALE_SETTING_COUNT:-250}"
+ROOT_OUTDIR="${PRISM_MULTISCALE_OUTDIR:-./results/multiscale_lgssm_robust}"
+SHARD_OUTDIR="${ROOT_OUTDIR}/shards/${ZERO_BASED}"
+
+cd "$REPO"
+mkdir -p logs "src/${SHARD_OUTDIR}"
+exec > "logs/multiscale_lgssm_robust_${TASK_ID}_${PBS_JOBID:-manual}.log" 2>&1
+
+echo "started $(date)"
+echo "repo=$REPO"
+echo "python=$PYTHON_BIN"
+echo "task_id=$TASK_ID"
+echo "setting_index=$ZERO_BASED"
+echo "setting_count=$SETTING_COUNT"
+echo "outdir=src/${SHARD_OUTDIR}"
+echo "job=${PBS_JOBID:-manual}"
+
+module load Python/3.11.3-GCCcore-12.3.0
+source "$HOME/venvs/prism/bin/activate"
+
+export PYTHONPATH="$REPO/src:${PYTHONPATH:-}"
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+export MPLBACKEND=Agg
+export MPLCONFIGDIR="${TMPDIR:-/tmp}/prism-mpl"
+export XDG_CACHE_HOME="${TMPDIR:-/tmp}/prism-cache"
+
+cd "$REPO/src"
+"$PYTHON_BIN" -m prism.experiments.multiscale_lgssm_recovery \
+  --obs-stds 0.08 0.12 0.15 0.20 0.30 \
+  --distractor-loadings 2.0 2.5 3.0 3.5 4.0 \
+  --seeds 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 \
+  --kmeans-ks 4 8 12 16 24 36 48 \
+  --pca-dims 2 3 5 \
+  --length 8000 \
+  --em-iters 40 \
+  --history-lens 5 20 50 100 \
+  --setting-index "$ZERO_BASED" \
+  --setting-count "$SETTING_COUNT" \
+  --outdir "$SHARD_OUTDIR"
+
+echo "finished $(date)"
+echo "After all array tasks finish, combine with:"
+echo "cd $REPO/src && $PYTHON_BIN -m prism.experiments.multiscale_lgssm_recovery --combine-shards $ROOT_OUTDIR"

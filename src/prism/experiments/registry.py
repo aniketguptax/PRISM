@@ -7,6 +7,7 @@ from prism.processes import (
     IIDBernoulli,
     MarkovOrder1,
     MarkovOrder2,
+    MultiscaleLGSSM,
     PredictiveLowVarianceLGSSM,
     SimpleNonUnifilarSource,
 )
@@ -27,6 +28,7 @@ PROCESS_REGISTRY = {
     "block_modular_lgssm": BlockModularLGSSM,
     "hierarchical_predictive_hmm": HierarchicalPredictiveHMM,
     "hierarchical_switching_gaussian": HierarchicalSwitchingGaussian,
+    "multiscale_lgssm": MultiscaleLGSSM,
     "predictive_low_variance_lgssm": PredictiveLowVarianceLGSSM,
 }
 

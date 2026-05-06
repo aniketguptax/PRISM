@@ -10,6 +10,7 @@ from .linear_gaussian_ssm import LinearGaussianSSM
 from .block_modular_lgssm import BlockModularLGSSM
 from .hierarchical_predictive_hmm import HierarchicalPredictiveHMM
 from .hierarchical_switching_gaussian import HierarchicalSwitchingGaussian
+from .multiscale_lgssm import MultiscaleLGSSM
 from .predictive_low_variance_lgssm import PredictiveLowVarianceLGSSM
 
 __all__ = [
@@ -26,5 +27,6 @@ __all__ = [
     "BlockModularLGSSM",
     "HierarchicalPredictiveHMM",
     "HierarchicalSwitchingGaussian",
+    "MultiscaleLGSSM",
     "PredictiveLowVarianceLGSSM",
 ]

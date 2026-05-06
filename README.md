@@ -203,11 +203,46 @@ The current full central-window PRISM run is captured in:
 qsub run_eeg_prism_central_full.pbs
 ```
 
-The script runs:
+For the central-window timecourse, run the array job instead:
 
-1. `data/processing/run.py prism-region-window`
-2. `data/processing/summarise.py evidence`
-3. `data/processing/summarise.py mechanistic-dissociation`
+```bash
+qsub run_eeg_prism_central_timecourse_array.pbs
+```
+
+This runs the central PRISM analysis for 18 subjects across the matched
+0-250, 125-375, and 250-500 ms windows. After syncing the array outputs back,
+summarise the subject-wise timecourse decoder with:
+
+```bash
+make eeg-prism-timecourse-decoder
+```
+
+To run the matched PRISM region x timecourse sweep:
+
+```bash
+qsub run_eeg_prism_region_timecourse_array.pbs
+```
+
+After syncing the result folders back:
+
+```bash
+make eeg-prism-region-timecourse-summary
+```
+
+The full central-window script calls `data/processing/run.py prism-region-window`
+across all subjects.
+
+After the result folders have been synced back locally, the current report EEG
+figures can be regenerated with:
+
+```bash
+make eeg-var-timecourse-figure
+make eeg-report-figures
+```
+
+`eeg-var-timecourse-figure` rebuilds the central VAR time-course figure from
+the baseline sweep. `eeg-report-figures` copies the current EEG PDFs into
+`report/figures/ch5`; the report folder is still ignored by git.
 
 For local debugging, use the same command with `--max-trials` and a single
 subject:

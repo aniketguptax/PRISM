@@ -7,7 +7,7 @@ endif
 
 PLOT_ENV = MPLBACKEND=Agg MPLCONFIGDIR=/tmp/prism-mpl XDG_CACHE_HOME=/tmp
 
-.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main
+.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main multiscale-lgssm-smoke multiscale-lgssm-main multiscale-lgssm-robust eeg-var-timecourse-figure eeg-subject-decoder eeg-prism-timecourse-decoder eeg-prism-region-timecourse-summary eeg-report-figures
 
 test:
 	@if ! $(PYTHON) -c "import pytest" >/dev/null 2>&1; then \
@@ -213,3 +213,56 @@ low-variance-lgssm-main:
 		--outdir ./results/low_variance_lgssm_main
 	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.low_variance_lgssm_figures \
 		--root ./results/low_variance_lgssm_main
+
+multiscale-lgssm-smoke:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.multiscale_lgssm_recovery \
+		--obs-stds 0.15 \
+		--distractor-loadings 2.5 3.0 \
+		--seeds 0 1 \
+		--kmeans-ks 4 8 12 16 \
+		--pca-dims 2 5 \
+		--length 1800 \
+		--em-iters 8 \
+		--history-lens 5 20 \
+		--outdir ./results/multiscale_lgssm_smoke
+
+multiscale-lgssm-main:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.multiscale_lgssm_recovery \
+		--obs-stds 0.12 0.15 0.20 \
+		--distractor-loadings 2.5 3.0 3.5 \
+		--seeds 0 1 2 3 4 \
+		--kmeans-ks 4 8 12 16 24 36 \
+		--pca-dims 2 3 5 \
+		--length 5000 \
+		--em-iters 30 \
+		--history-lens 5 20 \
+		--outdir ./results/multiscale_lgssm_main
+
+multiscale-lgssm-robust:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.multiscale_lgssm_recovery \
+		--obs-stds 0.08 0.12 0.15 0.20 0.30 \
+		--distractor-loadings 2.0 2.5 3.0 3.5 4.0 \
+		--seeds 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 \
+		--kmeans-ks 4 8 12 16 24 36 48 \
+		--pca-dims 2 3 5 \
+		--length 8000 \
+		--em-iters 40 \
+		--history-lens 5 20 50 100 \
+		--outdir ./results/multiscale_lgssm_robust
+
+eeg-var-timecourse-figure:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_var_timecourse_figure.py
+
+eeg-subject-decoder:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_subject_decoder.py
+
+eeg-prism-timecourse-decoder:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_timecourse_decoder.py
+
+eeg-prism-region-timecourse-summary:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_region_timecourse_summary.py
+
+eeg-report-figures: eeg-var-timecourse-figure eeg-prism-region-timecourse-summary
+	mkdir -p report/figures/ch5
+	cp data/results_baseline/region_sliding_baseline300ms_controls_focus_q4/summary_temporal_evidence_central/paper_figure/eeg_var_timecourse.pdf report/figures/ch5/eeg_var_timecourse.pdf
+	cp data/results_prism/eeg_prism_region_timecourse_pca_q4/summary_subject_decoder_region_timecourse/eeg_prism_region_timecourse_summary.pdf report/figures/ch5/eeg_prism_region_timecourse_summary.pdf
