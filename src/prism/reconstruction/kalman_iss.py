@@ -321,6 +321,21 @@ def _reconstruct_macrostates_greedy(
 
 def _pairwise_sym_kl(pred_means: Array, pred_covs: Array) -> Array:
     n = pred_means.shape[0]
+    if n == 0:
+        return np.zeros((0, 0), dtype=float)
+
+    if np.all(pred_covs == pred_covs[0]):
+        cov = _ensure_spd(pred_covs[0])
+        inv, _ = _spd_inv_logdet(cov)
+        dim = int(pred_means.shape[1])
+        self_term = float(np.trace(inv @ cov)) - dim
+        gram = pred_means @ inv @ pred_means.T
+        diag = np.diag(gram)
+        dist = diag[:, None] + diag[None, :] - 2.0 * gram + self_term
+        np.maximum(dist, 0.0, out=dist)
+        np.fill_diagonal(dist, 0.0)
+        return dist
+
     dist = np.zeros((n, n), dtype=float)
     for i in range(n):
         for j in range(i + 1, n):
@@ -352,26 +367,44 @@ def _reconstruct_macrostates_global_singlelink(dist: Array, *, eps: float) -> Ar
 def _reconstruct_macrostates_global_complete(dist: Array, *, eps: float) -> Array:
     n = dist.shape[0]
     clusters: list[list[int]] = [[i] for i in range(n)]
+    cluster_dist = dist.copy()
+    np.fill_diagonal(cluster_dist, math.inf)
+    active_ids = list(range(n))
+
     while True:
-        best_i = -1
-        best_j = -1
-        best_cost = math.inf
-        for i in range(len(clusters)):
-            ci = clusters[i]
-            for j in range(i + 1, len(clusters)):
-                cj = clusters[j]
-                cost = float(np.max(dist[np.ix_(ci, cj)]))
-                if cost < best_cost:
-                    best_cost = cost
-                    best_i = i
-                    best_j = j
-        if best_i < 0 or best_cost > eps:
+        if len(active_ids) < 2:
             break
+
+        active_dist = cluster_dist[np.ix_(active_ids, active_ids)].copy()
+        np.fill_diagonal(active_dist, math.inf)
+        flat_idx = int(np.argmin(active_dist))
+        best_cost = float(active_dist.flat[flat_idx])
+        if not math.isfinite(best_cost) or best_cost > eps:
+            break
+
+        pos_i, pos_j = divmod(flat_idx, len(active_ids))
+        if pos_i > pos_j:
+            pos_i, pos_j = pos_j, pos_i
+        best_i = active_ids[pos_i]
+        best_j = active_ids[pos_j]
+
         clusters[best_i].extend(clusters[best_j])
-        del clusters[best_j]
+        del active_ids[pos_j]
+
+        # Complete-linkage distance from the merged cluster to any active
+        # cluster is the maximum of the two previous cluster distances.
+        if active_ids:
+            active = np.asarray(active_ids, dtype=int)
+            updated = np.maximum(cluster_dist[best_i, active], cluster_dist[best_j, active])
+            cluster_dist[best_i, active] = updated
+            cluster_dist[active, best_i] = updated
+        cluster_dist[best_i, best_i] = math.inf
+        cluster_dist[best_j, :] = math.inf
+        cluster_dist[:, best_j] = math.inf
 
     labels = np.full(n, -1, dtype=int)
-    for idx, group in enumerate(clusters):
+    for idx, group_id in enumerate(active_ids):
+        group = clusters[group_id]
         for pos in group:
             labels[pos] = idx
     return labels
