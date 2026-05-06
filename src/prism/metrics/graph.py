@@ -78,7 +78,7 @@ class DotStyle:
     # Render state labels with an italic letter and subscript index (S_0 style).
     italic_state_subscript: bool = True
 
-    # If True: use xlabel (external, floating) — labels can land anywhere and
+    # If True: use xlabel (external, floating). Labels can land anywhere and
     # may sit on top of unrelated splines. If False: use inline `label`, so
     # graphviz splits the owning edge spline around the label and other edges
     # have to route clear of it. False is the publication-ready choice.
@@ -379,11 +379,11 @@ def to_dot(
             lines.append(f"  {s} -> {sp} [{', '.join(attrs)}];")
             continue
 
-        # Normal directed edge — let graphviz choose ports so arrowheads always
+        # Normal directed edge: let graphviz choose ports so arrowheads always
         # land at sp regardless of left/right placement.
         attrs = []
 
-        # Keep edges visible: give dot routing room; boost “important” edges.
+        # Keep edges visible: give dot routing room; boost high-prob edges.
         pm = _pmax(symps)
         if pm >= 0.5:
             attrs += ["minlen=2", "weight=3"]

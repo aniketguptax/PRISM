@@ -52,23 +52,4 @@ export XDG_CACHE_HOME="${TMPDIR:-/tmp}/prism-cache"
   --test-end-ms 375 \
   --n-jobs "$N_JOBS"
 
-"$PYTHON_BIN" data/processing/summarise.py evidence \
-  --baseline-results-dir data/results_baseline/region_sliding_baseline300ms_controls_focus_q4 \
-  --prism-results-dir "$OUTDIR" \
-  --outdir "$OUTDIR/summary_evidence" \
-  --regions central \
-  --rep-dim 4 \
-  --test-start-ms 125 \
-  --test-end-ms 375 \
-  --prism-model-family prism_pca
-
-"$PYTHON_BIN" data/processing/summarise.py mechanistic-dissociation \
-  --trial-scores-csv "$OUTDIR/summary_evidence/evidence_trial_scores.csv" \
-  --outdir "$OUTDIR/summary_mechanistic" \
-  --raw-model raw_central_delta \
-  --hybrid-model raw_central_plus_prism_central_augmented \
-  --baseline-aug-model prism_central_augmented \
-  --focus-start-ms 125 \
-  --focus-end-ms 375
-
 echo "finished $(date)"

@@ -203,11 +203,8 @@ The current full central-window PRISM run is captured in:
 qsub run_eeg_prism_central_full.pbs
 ```
 
-The script runs:
-
-1. `data/processing/run.py prism-region-window`
-2. `data/processing/summarise.py evidence`
-3. `data/processing/summarise.py mechanistic-dissociation`
+The script calls `data/processing/run.py prism-region-window` across all
+subjects.
 
 For local debugging, use the same command with `--max-trials` and a single
 subject:
