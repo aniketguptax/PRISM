@@ -7,7 +7,7 @@ endif
 
 PLOT_ENV = MPLBACKEND=Agg MPLCONFIGDIR=/tmp/prism-mpl XDG_CACHE_HOME=/tmp
 
-.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main
+.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main multiscale-lgssm-smoke multiscale-lgssm-main multiscale-lgssm-robust
 
 test:
 	@if ! $(PYTHON) -c "import pytest" >/dev/null 2>&1; then \
@@ -213,3 +213,39 @@ low-variance-lgssm-main:
 		--outdir ./results/low_variance_lgssm_main
 	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.low_variance_lgssm_figures \
 		--root ./results/low_variance_lgssm_main
+
+multiscale-lgssm-smoke:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.multiscale_lgssm_recovery \
+		--obs-stds 0.15 \
+		--distractor-loadings 2.5 3.0 \
+		--seeds 0 1 \
+		--kmeans-ks 4 8 12 16 \
+		--pca-dims 2 5 \
+		--length 1800 \
+		--em-iters 8 \
+		--history-lens 5 20 \
+		--outdir ./results/multiscale_lgssm_smoke
+
+multiscale-lgssm-main:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.multiscale_lgssm_recovery \
+		--obs-stds 0.12 0.15 0.20 \
+		--distractor-loadings 2.5 3.0 3.5 \
+		--seeds 0 1 2 3 4 \
+		--kmeans-ks 4 8 12 16 24 36 \
+		--pca-dims 2 3 5 \
+		--length 5000 \
+		--em-iters 30 \
+		--history-lens 5 20 \
+		--outdir ./results/multiscale_lgssm_main
+
+multiscale-lgssm-robust:
+	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.multiscale_lgssm_recovery \
+		--obs-stds 0.08 0.12 0.15 0.20 0.30 \
+		--distractor-loadings 2.0 2.5 3.0 3.5 4.0 \
+		--seeds 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 \
+		--kmeans-ks 4 8 12 16 24 36 48 \
+		--pca-dims 2 3 5 \
+		--length 8000 \
+		--em-iters 40 \
+		--history-lens 5 20 50 100 \
+		--outdir ./results/multiscale_lgssm_robust
