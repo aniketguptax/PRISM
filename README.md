@@ -19,14 +19,8 @@ src/prism/processes/    Synthetic data generators
 src/prism/experiments/  Thesis synthetic sweeps
 src/prism/analysis/     Figure and summary scripts
 data/processing/        EEG experiment and reporting pipeline
-report/                 Local thesis source, ignored by git
-logs/                   Local/HPC logs, ignored by git
+hpc/                    Scripts for heavy experimental runs 
 ```
-
-Generated data and results are intentionally not tracked. In particular,
-`data/ds001785`, `data/exports_mat`, `data/results_baseline`,
-`data/results_prism`, `src/results`, `logs`, and `report` are local working
-directories.
 
 ## Setup
 
