@@ -200,13 +200,13 @@ The EEG code lives in `data/processing`. It expects:
 The current full central-window PRISM run is captured in:
 
 ```bash
-qsub run_eeg_prism_central_full.pbs
+qsub hpc/run_eeg_prism_central_full.pbs
 ```
 
 For the central-window timecourse, run the array job instead:
 
 ```bash
-qsub run_eeg_prism_central_timecourse_array.pbs
+qsub hpc/run_eeg_prism_central_timecourse_array.pbs
 ```
 
 This runs the central PRISM analysis for 18 subjects across the matched
