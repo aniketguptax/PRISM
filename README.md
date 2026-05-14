@@ -16,10 +16,8 @@ Most commands are run from the repository root or from `src`.
 ```text
 src/prism/              Core PRISM package
 src/prism/processes/    Synthetic data generators
-src/prism/experiments/  Thesis synthetic sweeps
+src/prism/experiments/  Synthetic sweeps
 src/prism/analysis/     Figure and summary scripts
-data/processing/        EEG experiment and reporting pipeline
-hpc/                    Scripts for heavy experimental runs 
 ```
 
 ## Setup
