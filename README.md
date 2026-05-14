@@ -16,17 +16,9 @@ Most commands are run from the repository root or from `src`.
 ```text
 src/prism/              Core PRISM package
 src/prism/processes/    Synthetic data generators
-src/prism/experiments/  Thesis synthetic sweeps
+src/prism/experiments/  Synthetic sweeps
 src/prism/analysis/     Figure and summary scripts
-data/processing/        EEG experiment and reporting pipeline
-report/                 Local thesis source, ignored by git
-logs/                   Local/HPC logs, ignored by git
 ```
-
-Generated data and results are intentionally not tracked. In particular,
-`data/ds001785`, `data/exports_mat`, `data/results_baseline`,
-`data/results_prism`, `src/results`, `logs`, and `report` are local working
-directories.
 
 ## Setup
 
@@ -84,16 +76,6 @@ src/results/low_variance_lgssm_main/
 
 Each target runs the sweep and then generates the figure/report artefacts used
 in the thesis.
-
-There is also a block-modular LGSSM diagnostic:
-
-```bash
-make block-modular-smoke
-make block-modular-sweep
-```
-
-This is kept as a pipeline stress test and historical comparison. It is not the
-main continuous validation result.
 
 ## Generic PRISM CLI
 
@@ -209,8 +191,8 @@ For the central-window timecourse, run the array job instead:
 qsub hpc/run_eeg_prism_central_timecourse_array.pbs
 ```
 
-This runs the central PRISM analysis for 18 subjects across the matched
-0-250, 125-375, and 250-500 ms windows. After syncing the array outputs back,
+This runs the central PRISM analysis for 18 subjects across overlapping 250 ms
+windows stepped every 50 ms from 0-250 to 250-500 ms. After syncing the array outputs back,
 summarise the subject-wise timecourse decoder with:
 
 ```bash
@@ -222,6 +204,9 @@ To run the matched PRISM region x timecourse sweep:
 ```bash
 qsub run_eeg_prism_region_timecourse_array.pbs
 ```
+
+This uses the same overlapping 250 ms windows and evaluates all five scalp
+regions in each array task.
 
 After syncing the result folders back:
 

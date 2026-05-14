@@ -168,7 +168,7 @@ def _plot_timecourse(group_summary: pd.DataFrame, pairwise: pd.DataFrame, outdir
             "ytick.major.width": 0.8,
         }
     )
-    fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.9), constrained_layout=True)
+    fig, axes = plt.subplots(1, 2, figsize=(8.1, 3.0), constrained_layout=True)
 
     ax = axes[0]
     for spec in MODEL_SPECS:
@@ -177,11 +177,8 @@ def _plot_timecourse(group_summary: pd.DataFrame, pairwise: pd.DataFrame, outdir
         )
         x = model_df["target_center_ms"].to_numpy(dtype=float)
         y = model_df["auc_mean"].to_numpy(dtype=float)
-        low = model_df["auc_ci95_low"].to_numpy(dtype=float)
-        high = model_df["auc_ci95_high"].to_numpy(dtype=float)
         colour = colours[spec.name]
         ax.plot(x, y, marker="o", markersize=4.0, linewidth=1.6, color=colour, label=short_labels[spec.name])
-        ax.fill_between(x, low, high, color=colour, alpha=0.10, linewidth=0)
     ax.axhline(0.5, color="#707780", linewidth=0.9, linestyle="--")
     ax.set_ylabel("Held-out AUC")
     ax.set_xlabel("Post-stimulus window (ms)")
@@ -200,11 +197,8 @@ def _plot_timecourse(group_summary: pd.DataFrame, pairwise: pd.DataFrame, outdir
         contrast_df = pairwise.loc[pairwise["contrast"].eq(contrast)].sort_values("target_center_ms")
         x = contrast_df["target_center_ms"].to_numpy(dtype=float)
         y = contrast_df["mean_delta_model_b_minus_a"].to_numpy(dtype=float)
-        low = contrast_df["ci95_low"].to_numpy(dtype=float)
-        high = contrast_df["ci95_high"].to_numpy(dtype=float)
         colour = colours[contrast]
         ax.plot(x, y, marker="o", markersize=4.0, linewidth=1.6, color=colour, label=label)
-        ax.fill_between(x, low, high, color=colour, alpha=0.10, linewidth=0)
     ax.axhline(0.0, color="#707780", linewidth=0.9, linestyle="--")
     ax.set_ylabel("Delta AUC")
     ax.set_xlabel("Post-stimulus window (ms)")
@@ -222,7 +216,7 @@ def _plot_timecourse(group_summary: pd.DataFrame, pairwise: pd.DataFrame, outdir
     ticks = windows["target_center_ms"].to_numpy(dtype=float)
     labels = [_window_label(s, e) for s, e in zip(windows["target_start_ms"], windows["target_end_ms"])]
     for axis in axes:
-        axis.set_xticks(ticks, labels)
+        axis.set_xticks(ticks, labels, rotation=30, ha="right")
     axes[0].legend(frameon=False, fontsize=7.2, loc="upper left")
     axes[1].legend(frameon=False, fontsize=7.2, loc="upper left")
 

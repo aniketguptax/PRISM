@@ -864,6 +864,9 @@ class GaussianPredictiveStateModel:
     macro_eps: float
     macro_bins: int
     macro_symboliser: str
+    macro_centres_mu: Array
+    macro_centres_cov: Array
+    macro_quantiser: MacroQuantiser
     model_selection: bool
     selection_score: str
     selection_value: float
@@ -1035,6 +1038,68 @@ class GaussianPredictiveStateModel:
             steady_state_ridge=self.steady_state_ridge,
             allow_time_varying_fallback=self.allow_time_varying_fallback,
             steady_state_solution=self.steady_state_solution,
+        )
+
+    def macro_state_sequence(
+        self,
+        observations: Sequence[Obs] | Array,
+        *,
+        context: Optional[Sequence[Obs] | Array] = None,
+    ) -> Array:
+        """Assign observations to the macrostates learnt during fitting."""
+        y_obs = _to_continuous_matrix(
+            observations,
+            name="GaussianPredictiveStateModel.macro_state_sequence",
+            expected_dim=self.obs_dim,
+        )
+        if y_obs.shape[0] == 0:
+            return np.zeros((0,), dtype=int)
+
+        if context is not None:
+            y_ctx = _to_continuous_matrix(
+                context,
+                name="GaussianPredictiveStateModel.macro_state_sequence",
+                expected_dim=self.obs_dim,
+            )
+            if y_ctx.shape[0] > 0:
+                y_all = _stack_rows(y_ctx, y_obs)
+                t_start = y_ctx.shape[0] - 1
+                t_stop = y_ctx.shape[0] + y_obs.shape[0] - 2
+            else:
+                y_all = y_obs
+                t_start = 0
+                t_stop = y_obs.shape[0] - 2
+        else:
+            y_all = y_obs
+            t_start = 0
+            t_stop = y_obs.shape[0] - 2
+
+        if t_stop < t_start:
+            return np.zeros((0,), dtype=int)
+
+        mu_y, s_y, _ = one_step_predictive_y(
+            y_all,
+            self.iss,
+            steady_state=self._steady_state_enabled(),
+            steady_state_tol=self.steady_state_tol,
+            steady_state_max_iter=self.steady_state_max_iter,
+            steady_state_ridge=self.steady_state_ridge,
+            steady_state_strict=not self.allow_time_varying_fallback,
+            allow_time_varying_fallback=self.allow_time_varying_fallback,
+            steady_state_solution=self.steady_state_solution,
+        )
+        pred_mu, pred_cov = _project_predictors(
+            mu_y,
+            s_y,
+            self.projection,
+            t_start,
+            t_stop,
+        )
+        return _assign_states(
+            pred_mu,
+            pred_cov,
+            self.macro_centres_mu,
+            self.macro_centres_cov,
         )
 
     def filtered_state_sequence(
@@ -1612,6 +1677,9 @@ class KalmanISSReconstructor(Reconstructor[GaussianPredictiveStateModel]):
             macro_eps=chosen.macro_eps,
             macro_bins=self.macro_bins,
             macro_symboliser=self.macro_symboliser,
+            macro_centres_mu=macro.centres_mu,
+            macro_centres_cov=macro.centres_cov,
+            macro_quantiser=macro.quantiser,
             model_selection=self.model_select,
             selection_score=self.selection_score,
             selection_value=float(picked_value),

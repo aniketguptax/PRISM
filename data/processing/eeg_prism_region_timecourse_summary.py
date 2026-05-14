@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from _eeg_stats import _ci95, _format_p, _holm
 from eeg_prism_timecourse_decoder import (
     _window_label,
     discover_window_dirs,
@@ -26,8 +27,6 @@ from eeg_subject_decoder import (
     DEFAULT_N_FOLDS,
     DEFAULT_PRISM_MODEL_FAMILY,
     DEFAULT_REP_DIM,
-    _ci95,
-    _format_p,
 )
 
 
@@ -40,31 +39,11 @@ CONTRIBUTION_MODELS = {
 }
 
 
-def _holm_adjust(p_values: pd.Series) -> pd.Series:
-    values = p_values.to_numpy(dtype=float)
-    adjusted = np.full(values.shape, np.nan, dtype=float)
-    finite = np.isfinite(values)
-    if not finite.any():
-        return pd.Series(adjusted, index=p_values.index)
-
-    finite_idx = np.flatnonzero(finite)
-    ordered_local = np.argsort(values[finite])
-    ordered_idx = finite_idx[ordered_local]
-    ordered_p = values[ordered_idx]
-    n = ordered_p.size
-    running = 0.0
-    for rank, idx in enumerate(ordered_idx):
-        candidate = (n - rank) * values[idx]
-        running = max(running, candidate)
-        adjusted[idx] = min(running, 1.0)
-    return pd.Series(adjusted, index=p_values.index)
-
-
 def _add_holm_columns(df: pd.DataFrame, *, group_cols: list[str], p_col: str = "ttest_p") -> pd.DataFrame:
     out = df.copy()
     out[f"{p_col}_holm"] = np.nan
     for _, group in out.groupby(group_cols, dropna=False, sort=False):
-        out.loc[group.index, f"{p_col}_holm"] = _holm_adjust(group[p_col]).to_numpy(dtype=float)
+        out.loc[group.index, f"{p_col}_holm"] = _holm(group[p_col]).to_numpy(dtype=float)
     return out
 
 
@@ -172,9 +151,9 @@ def _plot_heatmaps(contrib_summary: pd.DataFrame, outdir: Path) -> None:
     vmax = float(np.nanmax(np.abs(mean_grid.to_numpy(dtype=float))))
     vmax = max(vmax, 1e-6)
     plt.rcParams.update({"font.size": 8, "axes.linewidth": 0.8})
-    fig, ax = plt.subplots(figsize=(4.9, 3.0), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(6.0, 3.0), constrained_layout=True)
     image = ax.imshow(mean_grid.to_numpy(dtype=float), cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
-    ax.set_xticks(np.arange(len(windows)), windows)
+    ax.set_xticks(np.arange(len(windows)), windows, rotation=30, ha="right")
     ax.set_yticks(np.arange(len(regions)), regions)
     ax.set_xlabel("Post-stimulus window (ms)")
     ax.set_title("PRISM contribution to hit-vs-miss evidence")
@@ -239,15 +218,15 @@ def _plot_summary_figure(
     fig, axes = plt.subplots(
         1,
         2,
-        figsize=(7.6, 2.85),
-        gridspec_kw={"width_ratios": [1.0, 1.28]},
+        figsize=(8.35, 3.05),
+        gridspec_kw={"width_ratios": [1.18, 1.32]},
         constrained_layout=True,
     )
 
     ax = axes[0]
     vmax = max(float(np.nanmax(np.abs(mean_grid.to_numpy(dtype=float)))), 1e-6)
     image = ax.imshow(mean_grid.to_numpy(dtype=float), cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
-    ax.set_xticks(np.arange(len(windows)), windows)
+    ax.set_xticks(np.arange(len(windows)), windows, rotation=30, ha="right")
     ax.set_yticks(np.arange(len(regions)), regions)
     ax.set_xlabel("Window (ms)")
     ax.set_title("PRISM contribution", fontsize=9)
@@ -290,7 +269,12 @@ def _plot_summary_figure(
         .drop_duplicates()
         .sort_values("target_center_ms")
     )
-    ax.set_xticks(ticks["target_center_ms"].to_numpy(dtype=float), ticks["window_label"].tolist())
+    ax.set_xticks(
+        ticks["target_center_ms"].to_numpy(dtype=float),
+        ticks["window_label"].tolist(),
+        rotation=30,
+        ha="right",
+    )
     ax.set_xlabel("Window (ms)")
     ax.set_ylabel("Held-out AUC")
     ax.set_title(f"{focus_region.capitalize()} decoder", fontsize=9)
@@ -311,6 +295,15 @@ def _write_ranked_cell_report(
     contrib_summary: pd.DataFrame,
     outpath: Path,
 ) -> None:
+    n_cells = int(
+        contrib_summary.loc[
+            contrib_summary["contrast"].eq("prism_contribution")
+            & contrib_summary["metric"].eq("hit_minus_miss_contribution"),
+            ["region_name", "window_label"],
+        ]
+        .drop_duplicates()
+        .shape[0]
+    )
     prism_contrib = contrib_summary.loc[
         contrib_summary["contrast"].eq("prism_contribution")
         & contrib_summary["metric"].eq("hit_minus_miss_contribution")
@@ -332,7 +325,7 @@ def _write_ranked_cell_report(
     lines = [
         "# PRISM EEG Region-Window Ranking",
         "",
-        "Cells are ranked after treating subject as the unit of inference. Holm correction is applied within each family of 15 region-window tests.",
+        f"Cells are ranked after treating subject as the unit of inference. Holm correction is applied within each family of {n_cells} region-window tests.",
         "",
         "## PRISM contribution beyond raw EEG",
         "",

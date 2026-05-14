@@ -1,9 +1,3 @@
-"""Subject-wise EEG decoders for the central PRISM analysis.
-
-Each participant is decoded separately, producing one set of scores per
-subject for the raw, VAR, PRISM, and hybrid feature sets.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -17,6 +11,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from _eeg_stats import _ci95, _format_p
 from eegprep import load_exported_subject, load_subject_channel_labels
 from experiments.spatial import build_channel_groups
 from experiments.temporal import infer_boundary_tolerance_ms, slice_trial_window
@@ -61,22 +56,6 @@ MODEL_SPECS = (
 def _finite(values: pd.Series | np.ndarray) -> np.ndarray:
     out = np.asarray(values, dtype=float)
     return out[np.isfinite(out)]
-
-
-def _ci95(values: pd.Series | np.ndarray) -> tuple[float, float]:
-    values = _finite(values)
-    if values.size < 2:
-        return math.nan, math.nan
-    half_width = stats.t.ppf(0.975, values.size - 1) * stats.sem(values)
-    return float(values.mean() - half_width), float(values.mean() + half_width)
-
-
-def _format_p(value: float) -> str:
-    if not np.isfinite(value):
-        return "nan"
-    if value < 1e-3:
-        return f"{value:.2e}"
-    return f"{value:.4f}".rstrip("0").rstrip(".")
 
 
 def _roc_auc(y_true: np.ndarray, scores: np.ndarray) -> float:
@@ -443,6 +422,7 @@ def build_analysis_frame(
     export_dir: Path,
     region: str,
     rep_dim: int,
+    baseline_rep_dim: int | None = None,
     test_start_ms: float,
     test_end_ms: float,
     baseline_start_ms: float,
@@ -452,10 +432,11 @@ def build_analysis_frame(
     negative_sdt: str,
     n_folds: int,
 ) -> pd.DataFrame:
+    baseline_dim = int(rep_dim if baseline_rep_dim is None else baseline_rep_dim)
     var_features = load_baseline_features(
         baseline_results_dir,
         region=region,
-        rep_dim=rep_dim,
+        rep_dim=baseline_dim,
         test_start_ms=test_start_ms,
         test_end_ms=test_end_ms,
     )
@@ -625,6 +606,7 @@ def run(
     outdir: Path,
     region: str,
     rep_dim: int,
+    baseline_rep_dim: int | None,
     test_start_ms: float,
     test_end_ms: float,
     baseline_start_ms: float,
@@ -643,6 +625,7 @@ def run(
         export_dir=export_dir,
         region=region,
         rep_dim=rep_dim,
+        baseline_rep_dim=baseline_rep_dim,
         test_start_ms=test_start_ms,
         test_end_ms=test_end_ms,
         baseline_start_ms=baseline_start_ms,
@@ -681,6 +664,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)
     parser.add_argument("--region", default=DEFAULT_REGION)
     parser.add_argument("--rep-dim", type=int, default=DEFAULT_REP_DIM)
+    parser.add_argument("--baseline-rep-dim", type=int, default=None)
     parser.add_argument("--test-start-ms", type=float, default=DEFAULT_TEST_START_MS)
     parser.add_argument("--test-end-ms", type=float, default=DEFAULT_TEST_END_MS)
     parser.add_argument("--baseline-start-ms", type=float, default=DEFAULT_BASELINE_START_MS)
@@ -703,6 +687,7 @@ def main() -> int:
         outdir=args.outdir,
         region=args.region,
         rep_dim=args.rep_dim,
+        baseline_rep_dim=args.baseline_rep_dim,
         test_start_ms=args.test_start_ms,
         test_end_ms=args.test_end_ms,
         baseline_start_ms=args.baseline_start_ms,

@@ -368,7 +368,16 @@ def _plot_summary(rows: list[dict[str, object]], outdir: Path) -> None:
         "oracle_latent": "#2a9d8f",
     }
 
-    fig, axes = plt.subplots(1, 3, figsize=(12.8, 3.6))
+    plt.rcParams.update(
+        {
+            "font.family": "DejaVu Sans",
+            "font.size": 7.1,
+            "axes.linewidth": 0.75,
+            "pdf.fonttype": 42,
+            "ps.fonttype": 42,
+        }
+    )
+    fig, axes = plt.subplots(1, 3, figsize=(7.35, 2.35))
     fig.patch.set_facecolor("white")
 
     kalman = df[df["method"] == "kalman_state_kmeans"]
@@ -378,12 +387,12 @@ def _plot_summary(rows: list[dict[str, object]], outdir: Path) -> None:
             means["method_param"],
             means[metric],
             marker="o",
-            linewidth=2.0,
-            markersize=4.0,
+            linewidth=1.5,
+            markersize=3.0,
             color=colour,
             label=metric.replace("ari_", "").title(),
         )
-    axes[0].set_title("A  Kalman scale path", loc="left", fontsize=10, fontweight="bold")
+    axes[0].set_title("A  Kalman scale path", loc="left", fontsize=8.0, fontweight="bold")
     axes[0].set_xlabel("Number of macrostates")
     axes[0].set_ylabel("ARI")
     xticks = sorted(kalman["method_param"].unique())
@@ -391,7 +400,7 @@ def _plot_summary(rows: list[dict[str, object]], outdir: Path) -> None:
     axes[0].set_xticklabels([str(int(value)) for value in xticks])
     axes[0].set_ylim(bottom=0.0)
     axes[0].grid(True, linewidth=0.5, alpha=0.25)
-    axes[0].legend(frameon=False, fontsize=8)
+    axes[0].legend(frameon=False, fontsize=5.8, handlelength=1.3)
 
     best_rows = []
     available_distractors = sorted(df["distractor_loading"].unique())
@@ -421,15 +430,15 @@ def _plot_summary(rows: list[dict[str, object]], outdir: Path) -> None:
             sub["obs_std"],
             sub["mean"],
             marker="o",
-            linewidth=2.0,
-            markersize=4.0,
+            linewidth=1.5,
+            markersize=3.0,
             color=family_colours[family],
         )
         line_ends.append((family, float(sub["obs_std"].iloc[-1]), float(sub["mean"].iloc[-1])))
     axes[1].set_title(
         f"B  Best joint recovery (distractor={distractor_for_bars:g})",
         loc="left",
-        fontsize=10,
+        fontsize=8.0,
         fontweight="bold",
     )
     axes[1].set_xticks(obs_for_bars)
@@ -461,7 +470,7 @@ def _plot_summary(rows: list[dict[str, object]], outdir: Path) -> None:
                 label_y[family],
                 family_labels[family],
                 color=family_colours[family],
-                fontsize=7.2,
+                fontsize=5.8,
                 va="center",
                 ha="left",
             )
@@ -508,7 +517,7 @@ def _plot_summary(rows: list[dict[str, object]], outdir: Path) -> None:
         vmin=0.0,
         vmax=float(np.nanmax(heatmap)),
     )
-    axes[2].set_title("C  Predictive-state joint gain", loc="left", fontsize=10, fontweight="bold")
+    axes[2].set_title("C  Predictive-state joint gain", loc="left", fontsize=8.0, fontweight="bold")
     axes[2].set_xticks(np.arange(len(obs_values)))
     axes[2].set_xticklabels([f"{value:g}" for value in obs_values])
     axes[2].set_yticks(np.arange(len(distractor_values)))
@@ -516,19 +525,19 @@ def _plot_summary(rows: list[dict[str, object]], outdir: Path) -> None:
     axes[2].set_xlabel("Observation noise")
     axes[2].set_ylabel("Distractor loading")
     cbar = fig.colorbar(im, ax=axes[2], fraction=0.046, pad=0.04)
-    cbar.set_label("ARI gain", fontsize=8)
-    cbar.ax.tick_params(labelsize=8)
+    cbar.set_label("ARI gain", fontsize=6.0)
+    cbar.ax.tick_params(labelsize=5.8)
 
     for ax in axes:
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-        ax.tick_params(labelsize=8)
-        ax.xaxis.label.set_size(8)
-        ax.yaxis.label.set_size(8)
+        ax.tick_params(labelsize=6.2)
+        ax.xaxis.label.set_size(6.5)
+        ax.yaxis.label.set_size(6.5)
 
-    fig.tight_layout()
-    fig.savefig(figures / "multiscale_lgssm_recovery.png", dpi=220, bbox_inches="tight")
-    fig.savefig(figures / "multiscale_lgssm_recovery.pdf", bbox_inches="tight")
+    fig.tight_layout(pad=0.55, w_pad=1.0)
+    fig.savefig(figures / "multiscale_lgssm_recovery.png", dpi=320, bbox_inches="tight", pad_inches=0.03)
+    fig.savefig(figures / "multiscale_lgssm_recovery.pdf", bbox_inches="tight", pad_inches=0.03)
     plt.close(fig)
 
 
