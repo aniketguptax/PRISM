@@ -7,7 +7,7 @@ endif
 
 PLOT_ENV = MPLBACKEND=Agg MPLCONFIGDIR=/tmp/prism-mpl XDG_CACHE_HOME=/tmp
 
-.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all block-modular-smoke block-modular-sweep hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main multiscale-lgssm-smoke multiscale-lgssm-main multiscale-lgssm-robust eeg-var-timecourse-figure eeg-subject-decoder eeg-prism-timecourse-decoder eeg-prism-region-timecourse-summary eeg-prism-fixed-cell-stats eeg-prism-fixed-cell-robust-summary eeg-report-figures
+.PHONY: test smoke-discrete smoke-discrete-iid smoke-discrete-markov smoke-discrete-even smoke-continuous smoke-continuous-psi smoke-all hierarchical-predictive-smoke hierarchical-predictive-sweep hierarchical-predictive-main low-variance-lgssm-smoke low-variance-lgssm-main multiscale-lgssm-smoke multiscale-lgssm-main multiscale-lgssm-robust ch3-transition-diagrams hierarchical-predictive-report-figure low-variance-lgssm-report-figure synthetic-report-figures eeg-var-timecourse-figure eeg-subject-decoder eeg-prism-timecourse-decoder eeg-prism-region-timecourse-summary eeg-prism-fixed-cell-stats eeg-prism-fixed-cell-robust-summary eeg-prism-fixed-cell-robustness-figure eeg-prism-contribution-figure eeg-prism-split-half eeg-prism-check-figure eeg-prism-loso eeg-prism-null-figure eeg-prism-state-features eeg-prism-state-features-robust-summary eeg-report-figures
 
 test:
 	@if ! $(PYTHON) -c "import pytest" >/dev/null 2>&1; then \
@@ -123,36 +123,6 @@ smoke-continuous-psi:
 
 smoke-all: smoke-discrete smoke-continuous smoke-continuous-psi
 
-block-modular-smoke:
-	cd src && $(PYTHON) -m prism.experiments.block_modular_recovery \
-		--couplings 0.0 0.05 0.20 \
-		--seeds 0 \
-		--obs-designs random aligned \
-		--builders hierarchical_single linear_quantile \
-		--eps-macros 0.15 0.25 \
-		--length 800 \
-		--em-iters 25 \
-		--outdir ./results/block_modular_smoke
-	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.block_modular_hierarchy \
-		--root ./results/block_modular_smoke
-	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.block_modular_emergence \
-		--root ./results/block_modular_smoke
-
-block-modular-sweep:
-	cd src && $(PYTHON) -m prism.experiments.block_modular_recovery \
-		--couplings 0.0 0.025 0.05 0.10 0.20 \
-		--seeds 0 1 2 \
-		--obs-designs random aligned \
-		--builders hierarchical_single hierarchical_complete linear_quantile greedy \
-		--eps-macros 0.10 0.15 0.25 0.40 \
-		--length 4000 \
-		--em-iters 50 \
-		--outdir ./results/block_modular_sweep
-	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.block_modular_hierarchy \
-		--root ./results/block_modular_sweep
-	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.block_modular_emergence \
-		--root ./results/block_modular_sweep
-
 hierarchical-predictive-smoke:
 	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.hierarchical_predictive_recovery \
 		--noises 0.02 0.16 \
@@ -185,10 +155,8 @@ hierarchical-predictive-main:
 		--context-len 2 \
 		--future-horizon 4 \
 		--outdir ./results/hierarchical_predictive_main
-	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.hierarchical_predictive_figures \
-		--root ./results/hierarchical_predictive_main
-	cd src && $(PYTHON) -m prism.analysis.hierarchical_predictive_report \
-		--root ./results/hierarchical_predictive_main
+	$(PLOT_ENV) $(PYTHON) data/processing/report_hierarchical_predictive_figure.py \
+		--root src/results/hierarchical_predictive_main
 
 low-variance-lgssm-smoke:
 	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.low_variance_lgssm_recovery \
@@ -199,8 +167,9 @@ low-variance-lgssm-smoke:
 		--length 2500 \
 		--em-iters 10 \
 		--outdir ./results/low_variance_lgssm_smoke
-	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.low_variance_lgssm_figures \
-		--root ./results/low_variance_lgssm_smoke
+	$(PLOT_ENV) $(PYTHON) data/processing/report_low_variance_lgssm_figure.py \
+		--root src/results/low_variance_lgssm_smoke \
+		--no-report-copy
 
 low-variance-lgssm-main:
 	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.low_variance_lgssm_recovery \
@@ -211,8 +180,8 @@ low-variance-lgssm-main:
 		--length 6000 \
 		--em-iters 30 \
 		--outdir ./results/low_variance_lgssm_main
-	cd src && $(PLOT_ENV) $(PYTHON) -m prism.analysis.low_variance_lgssm_figures \
-		--root ./results/low_variance_lgssm_main
+	$(PLOT_ENV) $(PYTHON) data/processing/report_low_variance_lgssm_figure.py \
+		--root src/results/low_variance_lgssm_main
 
 multiscale-lgssm-smoke:
 	cd src && $(PLOT_ENV) $(PYTHON) -m prism.experiments.multiscale_lgssm_recovery \
@@ -250,6 +219,17 @@ multiscale-lgssm-robust:
 		--history-lens 5 20 50 100 \
 		--outdir ./results/multiscale_lgssm_robust
 
+ch3-transition-diagrams:
+	$(PLOT_ENV) $(PYTHON) data/processing/report_transition_diagrams.py
+
+hierarchical-predictive-report-figure:
+	$(PLOT_ENV) $(PYTHON) data/processing/report_hierarchical_predictive_figure.py
+
+low-variance-lgssm-report-figure:
+	$(PLOT_ENV) $(PYTHON) data/processing/report_low_variance_lgssm_figure.py
+
+synthetic-report-figures: ch3-transition-diagrams hierarchical-predictive-report-figure low-variance-lgssm-report-figure
+
 eeg-var-timecourse-figure:
 	$(PLOT_ENV) $(PYTHON) data/processing/eeg_var_timecourse_figure.py
 
@@ -268,7 +248,36 @@ eeg-prism-fixed-cell-stats:
 eeg-prism-fixed-cell-robust-summary:
 	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_fixed_cell_robust_summary.py
 
-eeg-report-figures: eeg-var-timecourse-figure eeg-prism-region-timecourse-summary
+eeg-prism-fixed-cell-robustness-figure:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_fixed_cell_robustness_figure.py
+
+eeg-prism-contribution-figure:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_contribution_figure.py
+
+eeg-prism-split-half:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_split_half.py
+
+eeg-prism-check-figure:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_check_figure.py
+
+eeg-prism-loso:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_loso.py
+
+eeg-prism-null-figure:
+	$(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_null_figure.py
+
+eeg-prism-state-features:
+	PYTHONPATH=$(ROOT)/data/processing:$(ROOT)/src $(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_state_features.py --combine-only
+
+eeg-prism-state-features-robust-summary:
+	PYTHONPATH=$(ROOT)/data/processing:$(ROOT)/src $(PLOT_ENV) $(PYTHON) data/processing/eeg_prism_state_features_robust_summary.py
+
+eeg-report-figures:
 	mkdir -p report/figures/ch5
-	cp data/results_baseline/region_sliding_baseline300ms_controls_focus_q4/summary_temporal_evidence_central/paper_figure/eeg_var_timecourse.pdf report/figures/ch5/eeg_var_timecourse.pdf
-	cp data/results_prism/eeg_prism_region_timecourse_pca_q4/summary_subject_decoder_region_timecourse/eeg_prism_region_timecourse_summary.pdf report/figures/ch5/eeg_prism_region_timecourse_summary.pdf
+	cp data/results_prism/eeg_prism_region_timecourse_pca_q4_stride50/summary_subject_decoder_timecourse/eeg_prism_timecourse_decoder.pdf report/figures/ch5/eeg_prism_timecourse_decoder.pdf
+	cp data/results_prism/eeg_prism_region_timecourse_pca_q4_stride50/summary_subject_decoder_region_timecourse/eeg_prism_region_timecourse_summary.pdf report/figures/ch5/eeg_prism_region_timecourse_summary.pdf
+	cp data/results_prism/eeg_prism_region_timecourse_pca_q4_stride50/summary_subject_decoder_region_timecourse/contribution/eeg_prism_contribution.pdf report/figures/ch5/eeg_prism_contribution.pdf
+	cp data/results_prism/eeg_prism_region_timecourse_pca_q4_stride50/summary_subject_decoder_region_timecourse/split_half/eeg_prism_split_half.pdf report/figures/ch5/eeg_prism_split_half.pdf
+	cp data/results_prism/eeg_prism_region_timecourse_pca_q4_stride50/summary_subject_decoder_region_timecourse/loso/eeg_prism_loso.pdf report/figures/ch5/eeg_prism_loso.pdf
+	cp data/results_prism/eeg_prism_region_timecourse_pca_q4_stride50/summary_subject_decoder_region_timecourse/null_figure/eeg_prism_null_figure.pdf report/figures/ch5/eeg_prism_null_figure.pdf
+	cp data/results_prism/eeg_prism_state_features_grid_stride50/summary/controlled_state_features/loso/controlled_state_stability_loso.pdf report/figures/ch5/controlled_state_stability_loso.pdf

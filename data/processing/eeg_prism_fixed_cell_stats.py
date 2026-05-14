@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from _eeg_stats import _ci95, _format_p
+
 
 DEFAULT_ROOT = Path(
     "data/results_prism/eeg_prism_region_timecourse_pca_q4/summary_subject_decoder_region_timecourse"
@@ -25,23 +27,6 @@ MODEL_LABELS = {
     "raw_plus_var": "Raw EEG + VAR",
     "raw_plus_prism": "Raw EEG + PRISM",
 }
-
-
-def _ci95(values: np.ndarray) -> tuple[float, float]:
-    values = np.asarray(values, dtype=float)
-    values = values[np.isfinite(values)]
-    if values.size < 2:
-        return math.nan, math.nan
-    half_width = stats.t.ppf(0.975, values.size - 1) * stats.sem(values)
-    return float(values.mean() - half_width), float(values.mean() + half_width)
-
-
-def _format_p(value: float) -> str:
-    if not np.isfinite(value):
-        return "nan"
-    if value < 1e-3:
-        return f"{value:.2e}"
-    return f"{value:.4f}".rstrip("0").rstrip(".")
 
 
 def _roc_auc(labels: np.ndarray, scores: np.ndarray) -> float:

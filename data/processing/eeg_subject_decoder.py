@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from _eeg_stats import _ci95, _format_p
 from eegprep import load_exported_subject, load_subject_channel_labels
 from experiments.spatial import build_channel_groups
 from experiments.temporal import infer_boundary_tolerance_ms, slice_trial_window
@@ -55,22 +56,6 @@ MODEL_SPECS = (
 def _finite(values: pd.Series | np.ndarray) -> np.ndarray:
     out = np.asarray(values, dtype=float)
     return out[np.isfinite(out)]
-
-
-def _ci95(values: pd.Series | np.ndarray) -> tuple[float, float]:
-    values = _finite(values)
-    if values.size < 2:
-        return math.nan, math.nan
-    half_width = stats.t.ppf(0.975, values.size - 1) * stats.sem(values)
-    return float(values.mean() - half_width), float(values.mean() + half_width)
-
-
-def _format_p(value: float) -> str:
-    if not np.isfinite(value):
-        return "nan"
-    if value < 1e-3:
-        return f"{value:.2e}"
-    return f"{value:.4f}".rstrip("0").rstrip(".")
 
 
 def _roc_auc(y_true: np.ndarray, scores: np.ndarray) -> float:

@@ -54,7 +54,7 @@ def load_subject_channel_labels(
 ) -> list[str]:
     set_path = resolve_preproc_set_path(subject, derivatives_dir=derivatives_dir)
     if not set_path.exists():
-        raise FileNotFoundError(f"Preprocessed EEGLAB file not found: {set_path}")
+        set_path = _resolve_annex_case_mismatch(set_path)
 
     eeg = loadmat(set_path, struct_as_record=False, squeeze_me=True)["EEG"]
     chanlocs = np.atleast_1d(eeg.chanlocs)
@@ -65,3 +65,25 @@ def load_subject_channel_labels(
         raise ValueError(f"No channel labels found in {set_path}")
 
     return labels
+
+
+def _resolve_annex_case_mismatch(path: Path) -> Path:
+    if not path.is_symlink():
+        raise FileNotFoundError(f"Preprocessed EEGLAB file not found: {path}")
+
+    target = path.readlink()
+    absolute_target = (path.parent / target).resolve(strict=False)
+    filename = absolute_target.name
+    annex_root = None
+    for parent in path.parents:
+        candidate = parent / ".git" / "annex" / "objects"
+        if candidate.exists():
+            annex_root = candidate
+            break
+    if annex_root is None:
+        raise FileNotFoundError(f"Preprocessed EEGLAB file not found: {path}")
+
+    matches = list(annex_root.glob(f"**/{filename}"))
+    if len(matches) == 1 and matches[0].exists():
+        return matches[0]
+    raise FileNotFoundError(f"Preprocessed EEGLAB file not found: {path}")

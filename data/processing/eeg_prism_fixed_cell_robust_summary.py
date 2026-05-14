@@ -92,10 +92,17 @@ def _contribution_by_subject(scores: pd.DataFrame) -> pd.DataFrame:
         contrib = prism - raw
         hit = contrib[labels == 1]
         miss = contrib[labels == 0]
+        hit_rows = group.loc[labels == 1, ["confidence"]].copy()
+        hit_rows["contrib"] = hit
+        hit_rows = hit_rows.dropna()
+        confidence_rho = math.nan
+        if hit_rows.shape[0] >= 5:
+            confidence_rho = float(stats.spearmanr(hit_rows["contrib"], hit_rows["confidence"]).statistic)
         rows.append(
             {
                 "subject": subject,
                 "prism_hit_minus_miss": float(hit.mean() - miss.mean()),
+                "prism_confidence_rho_hits": confidence_rho,
             }
         )
     return pd.DataFrame(rows)
@@ -113,7 +120,12 @@ def _summarise_setting(setting: dict[str, object], summary_dir: Path) -> tuple[d
     values = wide_auc.merge(contrib, on="subject", how="inner", validate="one_to_one")
 
     row: dict[str, object] = dict(setting)
-    for metric in ("auc_prism_gain_over_raw", "auc_var_gain_over_raw", "prism_hit_minus_miss"):
+    for metric in (
+        "auc_prism_gain_over_raw",
+        "auc_var_gain_over_raw",
+        "prism_hit_minus_miss",
+        "prism_confidence_rho_hits",
+    ):
         stats_row = _one_sample(values[metric])
         for key, value in stats_row.items():
             row[f"{metric}_{key}"] = value
@@ -131,9 +143,12 @@ def _write_report(summary: pd.DataFrame, outpath: Path) -> None:
     n_settings = int(summary.shape[0])
     positive_auc = int((summary["auc_prism_gain_over_raw_mean"] > 0.0).sum())
     positive_contrib = int((summary["prism_hit_minus_miss_mean"] > 0.0).sum())
+    positive_conf = int((summary["prism_confidence_rho_hits_mean"] > 0.0).sum())
     all_subject_contrib = int((summary["prism_hit_minus_miss_positive_subjects"] == 18).sum())
+    all_subject_conf = int((summary["prism_confidence_rho_hits_positive_subjects"] == 18).sum())
     sig_auc = int((summary["auc_prism_gain_over_raw_ttest_p"] < 0.05).sum())
     sig_contrib = int((summary["prism_hit_minus_miss_ttest_p"] < 0.05).sum())
+    sig_conf = int((summary["prism_confidence_rho_hits_ttest_p"] < 0.05).sum())
     original = summary.loc[
         summary["rep_dim"].eq(4)
         & summary["macro_builder"].eq("hierarchical_complete")
@@ -148,6 +163,8 @@ def _write_report(summary: pd.DataFrame, outpath: Path) -> None:
         f"PRISM AUC gain is positive in {positive_auc}/{n_settings} settings and p<0.05 in {sig_auc}/{n_settings}.",
         f"PRISM hit-minus-miss contribution is positive in {positive_contrib}/{n_settings} settings and p<0.05 in {sig_contrib}/{n_settings}.",
         f"The contribution is positive in all 18 subjects for {all_subject_contrib}/{n_settings} settings.",
+        f"PRISM confidence-on-hit rho is positive in {positive_conf}/{n_settings} settings and p<0.05 in {sig_conf}/{n_settings}.",
+        f"The confidence rho is positive in all 18 subjects for {all_subject_conf}/{n_settings} settings.",
         "",
         "## Original setting",
         "",
@@ -159,7 +176,9 @@ def _write_report(summary: pd.DataFrame, outpath: Path) -> None:
         lines.append(
             f"- d=4, hierarchical_complete, eps=0.25: AUC gain={row['auc_prism_gain_over_raw_mean']:.4f}, "
             f"contribution={row['prism_hit_minus_miss_mean']:.4f}, "
-            f"contribution p={_format_p(float(row['prism_hit_minus_miss_ttest_p']))}."
+            f"contribution p={_format_p(float(row['prism_hit_minus_miss_ttest_p']))}, "
+            f"confidence rho={row['prism_confidence_rho_hits_mean']:.4f}, "
+            f"confidence p={_format_p(float(row['prism_confidence_rho_hits_ttest_p']))}."
         )
     lines.extend(
         [
@@ -170,6 +189,18 @@ def _write_report(summary: pd.DataFrame, outpath: Path) -> None:
             f"contribution={best['prism_hit_minus_miss_mean']:.4f}, "
             f"{int(best['prism_hit_minus_miss_positive_subjects'])}/18 positive subjects, "
             f"contribution p={_format_p(float(best['prism_hit_minus_miss_ttest_p']))}.",
+        ]
+    )
+    best_conf = summary.sort_values("prism_confidence_rho_hits_ttest_p").iloc[0]
+    lines.extend(
+        [
+            "",
+            "## Strongest setting by confidence p-value",
+            "",
+            f"- {best_conf['setting']}: AUC gain={best_conf['auc_prism_gain_over_raw_mean']:.4f}, "
+            f"confidence rho={best_conf['prism_confidence_rho_hits_mean']:.4f}, "
+            f"{int(best_conf['prism_confidence_rho_hits_positive_subjects'])}/18 positive subjects, "
+            f"confidence p={_format_p(float(best_conf['prism_confidence_rho_hits_ttest_p']))}.",
         ]
     )
     outpath.write_text("\n".join(lines) + "\n", encoding="utf-8")
