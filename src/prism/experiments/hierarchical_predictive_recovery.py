@@ -1,5 +1,3 @@
-"""Recovery sweep for the hierarchical predictive-state synthetic benchmark."""
-
 from __future__ import annotations
 
 import argparse
@@ -23,6 +21,7 @@ class SweepSpec:
     seeds: tuple[int, ...]
     eps_values: tuple[float, ...]
     kmeans_ks: tuple[int, ...]
+    history_clusterers: tuple[str, ...]
     length: int
     train_frac: float
     context_len: int
@@ -142,6 +141,48 @@ def _kmeans(
             else:
                 centres[cluster] = values[rng.integers(0, n_samples)]
     return labels, centres
+
+
+def _agglomerative_labels(values: np.ndarray, n_clusters: int, *, linkage: str) -> np.ndarray:
+    n_samples = values.shape[0]
+    if n_clusters <= 0:
+        raise ValueError("n_clusters must be >= 1.")
+    if n_samples == 0:
+        return np.zeros((0,), dtype=int)
+    n_clusters = min(n_clusters, n_samples)
+    clusters: list[list[int]] = [[idx] for idx in range(n_samples)]
+
+    distances = np.linalg.norm(values[:, None, :] - values[None, :, :], axis=-1)
+
+    def cluster_distance(a: list[int], b: list[int]) -> float:
+        block = distances[np.ix_(a, b)]
+        if linkage == "single":
+            return float(np.min(block))
+        if linkage == "complete":
+            return float(np.max(block))
+        if linkage == "average":
+            return float(np.mean(block))
+        raise ValueError(f"Unknown linkage={linkage!r}")
+
+    while len(clusters) > n_clusters:
+        best_pair: tuple[int, int] | None = None
+        best_distance = math.inf
+        for i in range(len(clusters)):
+            for j in range(i + 1, len(clusters)):
+                distance = cluster_distance(clusters[i], clusters[j])
+                if distance < best_distance:
+                    best_distance = distance
+                    best_pair = (i, j)
+        if best_pair is None:
+            break
+        i, j = best_pair
+        clusters[i] = clusters[i] + clusters[j]
+        del clusters[j]
+
+    labels = np.zeros(n_samples, dtype=int)
+    for label, cluster in enumerate(clusters):
+        labels[cluster] = label
+    return labels
 
 
 def _transition_diagnostics(labels: np.ndarray, symbols: np.ndarray) -> tuple[float, float]:
@@ -335,7 +376,8 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
     progress_path.write_text("", encoding="utf-8")
     rows: list[dict[str, object]] = []
 
-    total = len(spec.noises) * len(spec.seeds) * (len(spec.eps_values) + len(spec.kmeans_ks))
+    n_history_runs = len(spec.kmeans_ks) * len(spec.history_clusterers)
+    total = len(spec.noises) * len(spec.seeds) * (len(spec.eps_values) + n_history_runs)
     completed = 0
     started = time.perf_counter()
     _append_progress(progress_path, f"sweep start | total_runs={total}")
@@ -448,48 +490,90 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
                 ],
                 dtype=float,
             )
+            train_context_keys = [
+                _context_key(x, int(t), spec.context_len) for t in train_times.tolist()
+            ]
+            unique_context_keys = sorted(set(train_context_keys))
+            unique_context_values = np.asarray(
+                [_context_vector(key, alphabet_size) for key in unique_context_keys],
+                dtype=float,
+            )
             for k in spec.kmeans_ks:
-                start = time.perf_counter()
-                labels_train, centres = _kmeans(context_values, int(k), seed=seed)
-                labels_test = _labels_for_kmeans(
-                    x,
-                    test_times,
-                    context_len=spec.context_len,
-                    alphabet_size=alphabet_size,
-                    centres=centres,
-                )
-                probs = _cluster_next_symbol_probs(
-                    labels_train,
-                    x,
-                    train_times,
-                    alphabet_size=alphabet_size,
-                )
-                unif, branch = _transition_diagnostics(labels_train, x[train_times])
-                row = {
-                    "noise": float(noise),
-                    "seed": int(seed),
-                    "method": "history_kmeans",
-                    "method_param": float(k),
-                    "n_states": int(labels_train.max()) + 1,
-                    "ari_coarse": float(_adjusted_rand_index(labels_train, regimes["coarse"][train_times])),
-                    "ari_fine": float(_adjusted_rand_index(labels_train, regimes["fine"][train_times])),
-                    "ari_joint": float(_adjusted_rand_index(labels_train, regimes["joint"][train_times])),
-                    "test_logloss": _logloss(labels_test, x, test_times, probs),
-                    "unifilarity": unif,
-                    "branch_entropy": branch,
-                    "elapsed_s": float(time.perf_counter() - start),
-                }
-                rows.append(row)
-                npz_payload[f"history_kmeans_k{int(k)}"] = labels_train
-                completed += 1
-                _append_progress(
-                    progress_path,
-                    (
-                        f"method done | completed={completed}/{total} noise={noise:g} "
-                        f"seed={seed} method=history_kmeans k={k} "
-                        f"ari_coarse={row['ari_coarse']:.3f}"
-                    ),
-                )
+                for clusterer in spec.history_clusterers:
+                    start = time.perf_counter()
+                    method = f"history_{clusterer}"
+                    if clusterer == "kmeans":
+                        labels_train, centres = _kmeans(context_values, int(k), seed=seed)
+                        labels_test = _labels_for_kmeans(
+                            x,
+                            test_times,
+                            context_len=spec.context_len,
+                            alphabet_size=alphabet_size,
+                            centres=centres,
+                        )
+                    else:
+                        unique_labels = _agglomerative_labels(
+                            unique_context_values,
+                            int(k),
+                            linkage=clusterer,
+                        )
+                        context_to_cluster = {
+                            key: int(label)
+                            for key, label in zip(unique_context_keys, unique_labels.tolist())
+                        }
+                        fallback_label = int(unique_labels.max()) + 1 if unique_labels.size else 0
+                        labels_train = _labels_for_predictive_clusters(
+                            x,
+                            train_times,
+                            context_len=spec.context_len,
+                            context_to_cluster=context_to_cluster,
+                            fallback_label=fallback_label,
+                        )
+                        labels_test = _labels_for_predictive_clusters(
+                            x,
+                            test_times,
+                            context_len=spec.context_len,
+                            context_to_cluster=context_to_cluster,
+                            fallback_label=fallback_label,
+                        )
+                    probs = _cluster_next_symbol_probs(
+                        labels_train,
+                        x,
+                        train_times,
+                        alphabet_size=alphabet_size,
+                    )
+                    if labels_test.size and labels_test.max() >= probs.shape[0]:
+                        probs = _ensure_probability_rows(
+                            probs,
+                            min_rows=int(labels_test.max()) + 1,
+                            alphabet_size=alphabet_size,
+                        )
+                    unif, branch = _transition_diagnostics(labels_train, x[train_times])
+                    row = {
+                        "noise": float(noise),
+                        "seed": int(seed),
+                        "method": method,
+                        "method_param": float(k),
+                        "n_states": int(max(labels_train.max(), labels_test.max()) + 1),
+                        "ari_coarse": float(_adjusted_rand_index(labels_train, regimes["coarse"][train_times])),
+                        "ari_fine": float(_adjusted_rand_index(labels_train, regimes["fine"][train_times])),
+                        "ari_joint": float(_adjusted_rand_index(labels_train, regimes["joint"][train_times])),
+                        "test_logloss": _logloss(labels_test, x, test_times, probs),
+                        "unifilarity": unif,
+                        "branch_entropy": branch,
+                        "elapsed_s": float(time.perf_counter() - start),
+                    }
+                    rows.append(row)
+                    npz_payload[f"{method}_k{int(k)}"] = labels_train
+                    completed += 1
+                    _append_progress(
+                        progress_path,
+                        (
+                            f"method done | completed={completed}/{total} noise={noise:g} "
+                            f"seed={seed} method={method} k={k} "
+                            f"ari_coarse={row['ari_coarse']:.3f}"
+                        ),
+                    )
 
             np.savez(outdir / f"labels_noise{noise:g}_seed{seed}.npz", **npz_payload)
             _append_progress(
@@ -519,6 +603,7 @@ def run_sweep(spec: SweepSpec, outdir: Path) -> None:
             "seeds": list(spec.seeds),
             "eps_values": list(spec.eps_values),
             "kmeans_ks": list(spec.kmeans_ks),
+            "history_clusterers": list(spec.history_clusterers),
             "length": spec.length,
             "train_frac": spec.train_frac,
             "context_len": spec.context_len,
@@ -541,6 +626,12 @@ def main() -> None:
     parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
     parser.add_argument("--eps-values", nargs="+", type=float, default=[0.25, 0.30, 0.35, 0.40, 0.45, 0.50])
     parser.add_argument("--kmeans-ks", nargs="+", type=int, default=[3, 6, 12])
+    parser.add_argument(
+        "--history-clusterers",
+        nargs="+",
+        choices=["kmeans", "single", "complete", "average"],
+        default=["kmeans", "complete", "average"],
+    )
     parser.add_argument("--length", type=int, default=12000)
     parser.add_argument("--train-frac", type=float, default=0.8)
     parser.add_argument("--context-len", type=int, default=2)
@@ -560,6 +651,7 @@ def main() -> None:
         seeds=tuple(args.seeds),
         eps_values=tuple(args.eps_values),
         kmeans_ks=tuple(args.kmeans_ks),
+        history_clusterers=tuple(args.history_clusterers),
         length=int(args.length),
         train_frac=float(args.train_frac),
         context_len=int(args.context_len),
