@@ -8,7 +8,8 @@ from typing import Any, Dict, Optional, Sequence
 from prism.metrics import log_loss_with_context, n_states, statistical_complexity, unifilarity_score
 from prism.metrics.branching import mean_branching_entropy_weighted
 from prism.metrics.gaussian_predictive import gaussian_log_loss, macro_predictive_log_loss
-from prism.metrics.graph import DotStyle, dot_to_png, save_dot, to_dot, to_edge_list
+from prism.metrics.graph import DotStyle, save_dot, to_dot, to_edge_list
+from prism.viz import render_from_edges
 from prism.processes.protocols import Process
 from prism.reconstruction.kalman_iss import GaussianPredictiveStateModel
 from prism.reconstruction.protocols import PredictiveStateModel, Reconstructor
@@ -361,10 +362,16 @@ def run_experiment(
             if save_transitions and (transitions_rep_name is None or rep.name == transitions_rep_name):
                 edges = to_edge_list(model)
                 transitions_dir.mkdir(exist_ok=True)
-                json_path = transitions_dir / f"{condition_id}__transitions_{rep.name}_seed{seed}.json"
-                dot_path = transitions_dir / f"{condition_id}__transitions_{rep.name}_seed{seed}.dot"
-                png_path = transitions_dir / f"{condition_id}__transitions_{rep.name}_seed{seed}.png"
+                stem = f"{condition_id}__transitions_{rep.name}_seed{seed}"
+                json_path = transitions_dir / f"{stem}.json"
+                meta_path = transitions_dir / f"{stem}_meta.json"
+                dot_path = transitions_dir / f"{stem}.dot"
                 save_json(json_path, edges)
+                emission = {
+                    int(k): float(v) for k, v in getattr(model, "p_next_one", {}).items()
+                }
+                occupancy = {int(k): float(v) for k, v in getattr(model, "pi", {}).items()}
+                save_json(meta_path, {"emission": emission, "occupancy": occupancy})
                 dot = to_dot(
                     edges,
                     graph_name=f"{process.name}_{rep.name}_seed{seed}",
@@ -372,7 +379,12 @@ def run_experiment(
                     style=DotStyle(rankdir="LR"),
                 )
                 save_dot(dot_path, dot)
-                dot_to_png(dot_path, png_path)
+                render_from_edges(
+                    edges,
+                    transitions_dir / stem,
+                    emission=emission,
+                    occupancy=occupancy,
+                )
 
             rows.append(
                 {
