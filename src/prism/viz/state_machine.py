@@ -7,7 +7,6 @@ from typing import Iterable, Mapping, Sequence
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.colors import LinearSegmentedColormap, Normalize, to_rgb
 from matplotlib.patches import Circle, FancyArrowPatch

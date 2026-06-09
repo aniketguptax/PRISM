@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable
-
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 
 INK = "#1F2937"
