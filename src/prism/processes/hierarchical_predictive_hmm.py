@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from prism.types import LatentState, Obs
+from prism.types import LatentState
 
 from .protocols import Process, Sample
 

@@ -1,5 +1,4 @@
 import random
-from typing import List
 
 from .protocols import Process, Sample
 
