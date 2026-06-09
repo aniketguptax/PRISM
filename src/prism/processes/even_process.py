@@ -1,5 +1,4 @@
 import random
-from typing import List
 
 from .protocols import Process, Sample
 
@@ -8,7 +7,7 @@ class EvenProcess(Process):
     @property
     def name(self) -> str:
         return "even_process"
-    
+
     def __init__(self, p_emit_one: float = 0.7):
         if not (0.0 < p_emit_one < 1.0):
             raise ValueError("p needs to be between 0 and 1")

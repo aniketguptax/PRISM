@@ -1,6 +1,6 @@
 import random
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import List, Sequence
 
 from .protocols import Process, Sample, Obs
 
